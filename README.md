@@ -4,7 +4,7 @@ Tools for working with LaTeX files, in your browser.
 
 ## Web App
 The web app shows your file next to the result with the current settings,
-before you download it: open, drop, or paste (Ctrl+V) your `.tex` files.  It
+before you download it: open, drop, or paste (Ctrl+V) your `.tex` files or a `.zip` of your project.  It
 runs Python in your browser with [Pyodide](https://pyodide.org), so your
 files never leave your computer.
 
@@ -13,9 +13,13 @@ files never leave your computer.
 * Removed lines are marked red, and the removed end of a changed line is
   struck through.  Text that is kept on purpose, e.g., a `%` in a `verbatim`
   environment, is marked purple.
-* Several files can be open at once, e.g., all the files of a paper.  Click a
-  file to show it, and download the shown one, or all of them as a `.zip`.
-  Files keep their names, so that `\input` and `\include` still find them.
+* Open the `.zip` of your project, e.g., from Overleaf, and download it with
+  the comments removed from all its `.tex` files.  The other files, e.g.,
+  figures and the `.bib` file, and the folders stay as they are.
+* Several files can be open at once, e.g., all the files of a paper.  Choose
+  the shown file above the original, and download it, or all of them as a
+  `.zip`.  Files keep their names, so that `\input` and `\include` still
+  find them.
 * Files that are not UTF-8 are read and saved as Latin-1, and line endings
   (`\n` or `\r\n`) are kept.
 

@@ -42,3 +42,49 @@ def test_zip_files():
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         assert archive.read("a.tex") == b"\xef\xbb\xbf" + "ä\n".encode("utf-8")
         assert archive.read("b.tex") == b"\xe4\n"
+
+
+def _project():
+    """A zip file like one from Overleaf, with a .tex file in a folder, an
+    image, and the copies that macOS adds."""
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("main.tex", "\\input{sections/intro} % x\n")
+        archive.writestr("sections/", b"")
+        archive.writestr(zipfile.ZipInfo("sections/intro.tex",
+                                         (2020, 1, 2, 3, 4, 6)),
+                         b"Caf\xe9 % x\r\n")
+        archive.writestr(zipfile.ZipInfo("figures/plot.png"), b"\x89PNG%")
+        archive.writestr("__MACOSX/._main.tex", b"\x00\x05")
+    return data.getvalue()
+
+
+def test_read_zip():
+    response = json.loads(web.read_zip(_project()))
+    assert response == {"others": 2, "files": [
+        {"name": "main.tex", "text": "\\input{sections/intro} % x\n",
+         "encoding": "utf-8", "bom": False},
+        {"name": "sections/intro.tex", "text": "Caf\xe9 % x\r\n",
+         "encoding": "latin-1", "bom": False}]}
+    assert "error" in json.loads(web.read_zip(b"not a zip file"))
+
+
+def test_zip_files_keeps_the_other_files():
+    project = _project()
+    files = json.loads(web.read_zip(project))["files"]
+    response = _run({"sources": files, "options": {}})
+    for _file, _result in zip(files, response["files"]):
+        _file["text"] = _result["text"]
+    files.append({"name": "new.tex", "text": "new\n"})
+    data = web.zip_files(json.dumps({"files": files}), project)
+    with zipfile.ZipFile(io.BytesIO(project)) as before, \
+            zipfile.ZipFile(io.BytesIO(data)) as after:
+        assert after.namelist() == before.namelist() + ["new.tex"]
+        assert after.read("main.tex") == b"\\input{sections/intro}\n"
+        assert after.read("sections/intro.tex") == b"Caf\xe9\r\n"
+        assert after.getinfo("sections/intro.tex").date_time == \
+            (2020, 1, 2, 3, 4, 6)
+        assert after.getinfo("sections/").is_dir()
+        for name in ("figures/plot.png", "__MACOSX/._main.tex"):
+            assert after.read(name) == before.read(name)
+        assert after.read("new.tex") == b"new\n"

@@ -7,8 +7,9 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 // Bumped when the defaults change, so that they apply to everybody once
 const SETTINGS_KEY = "textools.settings.v1";
 const THEME_KEY = "textools.theme";
+// The files that are cleaned, like _TEX_FILE in textools/web.py
 const TEX_FILE = /\.(tex|ltx|sty|cls|dtx|ins|bbx|cbx|lbx|tikz|pgf)$/i;
-const ZIP_NAME = "tex-tools.zip";
+const ZIP_FILE = /\.zip$/i;
 
 const DEFAULT_SETTINGS = {
   comments: { enabled: true, empty: true, lines: true, blank: true, space: true },
@@ -17,11 +18,16 @@ const DEFAULT_SETTINGS = {
 
 const state = {
   settings: loadSettings(),
-  sources: [],  // {name, text, encoding, bom} of the files
+  // {name, text, encoding, bom, archive} of the files. A file from a zip file
+  // has its path as name and the id of the zip file as archive.
+  sources: [],
+  archives: [], // {id, name, data, others, shown} of the opened zip files
+  archiveId: 0,
   active: 0,    // the file shown in the panes
   response: null,
   runId: 0,
   zipId: 0,
+  zipName: null,
   ready: false,
   error: null,
   linkScroll: true,
@@ -125,6 +131,10 @@ worker.onmessage = ({ data }) => {
     if (data.id !== state.runId) return;
     setBusy(false);
     showError(data.message);
+  } else if (data.type === "unzip") {
+    const pending = unzipping.get(data.id);
+    unzipping.delete(data.id);
+    if (pending) addArchive(pending, data.error ? { error: data.error } : JSON.parse(data.response));
   } else if (data.type === "zip") {
     saveZip(data);
   } else if (data.type === "fatal") {
@@ -252,6 +262,7 @@ function encode(source, text) {
 
 function setSources(sources, active = 0) {
   state.sources = sources;
+  state.archives = state.archives.filter((archive) => sources.some((s) => s.archive === archive.id));
   state.active = Math.min(Math.max(active, 0), Math.max(sources.length - 1, 0));
   state.response = null;
   state.error = null;
@@ -260,43 +271,85 @@ function setSources(sources, active = 0) {
   schedule(0);
 }
 
-// Add files and show the first of them. A file with the name of an open file
-// replaces it, e.g., after you changed it.
-function addSources(added) {
+// Add files and show one of them, the first by default. A file with the
+// name of an open file replaces it, e.g., after you changed it, and keeps its
+// place in a zip file.
+function addSources(added, show = 0) {
   const sources = [...state.sources];
   let active = null;
   let replaced = 0;
-  for (const source of added) {
+  added.forEach((source, i) => {
     let idx = sources.findIndex((s) => s.name === source.name);
     if (idx >= 0) {
-      sources[idx] = source;
+      sources[idx] = { ...source, archive: sources[idx].archive ?? source.archive };
       replaced += 1;
     } else {
       idx = sources.push(source) - 1;
     }
-    if (active === null) active = idx;
-  }
+    if (i === show) active = idx;
+  });
   setSources(sources, active);
   if (replaced) toast(`Updated ${plural(replaced, "open file")}`);
 }
 
 async function openFiles(files) {
-  const tex = [...files].filter((file) => TEX_FILE.test(file.name));
-  const skipped = files.length - tex.length;
+  const all = [...files];
+  const tex = all.filter((file) => TEX_FILE.test(file.name));
+  const zips = all.filter((file) => ZIP_FILE.test(file.name));
+  const skipped = all.length - tex.length - zips.length;
   if (skipped) {
-    toast(`Skipped ${plural(skipped, "file")} that ${skipped === 1 ? "is" : "are"} not a .tex file`);
+    toast(`Skipped ${plural(skipped, "file")} that ${skipped === 1 ? "is" : "are"} not a .tex or .zip file`);
   }
   if (tex.length) addSources(await Promise.all(tex.map(readFile)));
+  for (const zip of zips) openZip(zip.name, new Uint8Array(await zip.arrayBuffer()));
 }
 
-function closeFile(idx) {
-  const active = idx < state.active || (idx === state.active && idx === state.sources.length - 1)
-    ? state.active - 1 : state.active;
-  setSources(state.sources.filter((_, i) => i !== idx), active);
+// Zip files are read by Python in the worker, which answers with their .tex
+// files. The zip files are kept to write them again with the cleaned files.
+const unzipping = new Map();
+
+function openZip(name, data) {
+  state.archiveId += 1;
+  unzipping.set(state.archiveId, { id: state.archiveId, name, data });
+  worker.postMessage({ type: "unzip", id: state.archiveId, data });
+  toast(`Opening ${name}…`);
 }
+
+function addArchive({ id, name, data }, response) {
+  if (response.error) {
+    toast(`Could not open ${name}: ${response.error}`);
+    return;
+  }
+  if (!response.files.length) {
+    toast(`There are no .tex files in ${name}`);
+    return;
+  }
+  // A zip file with the name of an open one replaces it
+  const old = state.archives.find((archive) => archive.name === name);
+  if (old) state.sources = state.sources.filter((s) => s.archive !== old.id);
+  state.archives = [...state.archives.filter((archive) => archive !== old),
+    { id, name, data, others: response.others, shown: null }];
+  const files = response.files.map((file) => ({ ...file, archive: id }));
+  // Show the main file first
+  addSources(files, Math.max(0, files.findIndex((file) => /\\documentclass/.test(file.text))));
+  toast(`Opened ${plural(files.length, ".tex file")} of ${name}` +
+    (response.others ? `. The ${plural(response.others, "other file")} stay as they are.` : ""));
+}
+
+// Close the files for which `keep` is false, and show the same file as
+// before, or else the next one
+function closeSources(keep) {
+  const shown = state.sources[state.active];
+  const sources = state.sources.filter(keep);
+  const active = sources.includes(shown) ? sources.indexOf(shown)
+    : state.sources.slice(0, state.active).filter(keep).length;
+  setSources(sources, active);
+}
+
+const archiveOf = (source) => state.archives.find((archive) => archive.id === source.archive);
 
 function setActive(idx) {
-  if (idx === state.active) return;
+  if (idx === state.active || !state.sources[idx]) return;
   state.active = idx;
   resetScroll();
   render();
@@ -319,34 +372,92 @@ $("#example").addEventListener("click", async () => {
 
 const FILE_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>`;
 
-function renderFiles() {
-  $("#files").replaceChildren(...state.sources.map((source, idx) => {
-    const chip = document.createElement("span");
-    chip.className = "chip" + (idx === state.active ? " active" : "");
-    const open = document.createElement("button");
-    open.className = "chip-open";
-    open.title = `Show ${source.name}`;
-    open.setAttribute("aria-pressed", String(idx === state.active));
-    open.innerHTML = FILE_ICON;
-    open.append(source.name);
-    const file = state.response && state.response.files[idx];
-    if (file) {
-      const count = document.createElement("span");
-      count.className = "count";
-      count.textContent = `· ${file.comments}`;
-      open.title += ` (${plural(file.comments, "comment")} removed)`;
-      open.append(count);
-    }
-    open.addEventListener("click", () => setActive(idx));
-    const close = document.createElement("button");
-    close.className = "chip-close";
-    close.textContent = "×";
-    close.title = `Close ${source.name}`;
-    close.addEventListener("click", () => closeFile(idx));
-    chip.append(open, close);
-    return chip;
-  }));
+const ZIP_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>`;
+
+function chip({ icon, name, comments, title, active, onOpen, onClose }) {
+  const el = document.createElement("span");
+  el.className = "chip" + (active ? " active" : "");
+  const open = document.createElement("button");
+  open.className = "chip-open";
+  open.title = title;
+  open.setAttribute("aria-pressed", String(active));
+  open.innerHTML = icon;
+  open.append(name);
+  if (comments !== null) {
+    const count = document.createElement("span");
+    count.className = "count";
+    count.textContent = `· ${comments}`;
+    open.title += ` (${plural(comments, "comment")} removed)`;
+    open.append(count);
+  }
+  open.addEventListener("click", onOpen);
+  const close = document.createElement("button");
+  close.className = "chip-close";
+  close.textContent = "×";
+  close.title = `Close ${name}`;
+  close.addEventListener("click", onClose);
+  el.append(open, close);
+  return el;
 }
+
+// A chip for each file, and one for each zip file with all its files
+function renderFiles() {
+  const files = state.response ? state.response.files : null;
+  const shown = state.sources[state.active];
+  const chips = [];
+  state.sources.forEach((source, idx) => {
+    if (source.archive == null) {
+      chips.push(chip({
+        icon: FILE_ICON, name: source.name, comments: files ? files[idx].comments : null,
+        title: `Show ${source.name}`, active: idx === state.active,
+        onOpen: () => setActive(idx), onClose: () => closeSources((s) => s !== source),
+      }));
+      return;
+    }
+    const archive = archiveOf(source);
+    if (state.sources.findIndex((s) => s.archive === archive.id) !== idx) return;
+    const members = state.sources.map((s, i) => [s, i]).filter(([s]) => s.archive === archive.id);
+    chips.push(chip({
+      icon: ZIP_ICON, name: archive.name,
+      comments: files ? members.reduce((sum, [, i]) => sum + files[i].comments, 0) : null,
+      title: `Show the files of ${archive.name}: ${plural(members.length, ".tex file")}` +
+        (archive.others ? ` and ${plural(archive.others, "other file")}` : ""),
+      active: shown.archive === archive.id,
+      onOpen: () => {
+        const last = members.find(([s]) => s.name === archive.shown);
+        setActive((last || members[0])[1]);
+      },
+      onClose: () => closeSources((s) => s.archive !== archive.id),
+    }));
+  });
+  $("#files").replaceChildren(...chips);
+}
+
+// Choose the shown file, e.g., one of the files of a zip file
+function renderFileSelect() {
+  const select = $("#file-select");
+  select.hidden = state.sources.length < 2;
+  if (select.hidden) return;
+  const files = state.response ? state.response.files : null;
+  const groups = new Map();
+  select.replaceChildren();
+  state.sources.forEach((source, idx) => {
+    let parent = select;
+    if (source.archive != null) {
+      if (!groups.has(source.archive)) {
+        const group = Object.assign(document.createElement("optgroup"), { label: archiveOf(source).name });
+        groups.set(source.archive, group);
+        select.append(group);
+      }
+      parent = groups.get(source.archive);
+    }
+    const comments = files ? ` · ${plural(files[idx].comments, "comment")}` : "";
+    parent.append(new Option(source.name + comments, String(idx)));
+  });
+  select.value = String(state.active);
+}
+
+$("#file-select").addEventListener("change", (event) => setActive(Number(event.target.value)));
 
 /* Paste */
 
@@ -554,18 +665,30 @@ function render() {
   if (!state.error) overlay.classList.remove("error");
   if (waiting && state.ready) $("#overlay-text").textContent = "Working…";
 
+  // With a zip file, the main download is the zip file
+  const zip = $("#download-all");
+  const archives = state.archives.length > 0;
   $("#copy").disabled = !file;
   $("#download").disabled = !file;
-  $("#download-all").hidden = state.sources.length < 2;
-  $("#download-all").disabled = !state.response;
+  $("#download").classList.toggle("primary", !archives);
+  zip.hidden = state.sources.length < 2 && !archives;
+  zip.disabled = !state.response;
+  zip.classList.toggle("primary", archives);
+  $("#download-all-label").textContent = archives ? "Download .zip" : "All as .zip";
+  zip.title = archives
+    ? `Download ${zipName()} with the comments removed from all .tex files, and the other files as they are (Ctrl+S)`
+    : "Download the results of all files in a .zip file";
+  if (source && source.archive != null) archiveOf(source).shown = source.name;
   renderFiles();
+  renderFileSelect();
   renderMeta(source, lines, file);
   renderStatus();
 }
 
 function renderMeta(source, lines, file) {
+  // The name is in the list of files, if there are several
   $("#original-meta").textContent = source ? [
-    source.name,
+    state.sources.length < 2 ? source.name : null,
     plural(lines.length, "line"),
     source.encoding === "latin-1" ? "Latin-1" : null,
   ].filter(Boolean).join(" · ") : "";
@@ -603,7 +726,10 @@ function renderStatus() {
     counts.innerHTML = `<strong>${comments}</strong> ${comments === 1 ? "comment" : "comments"} removed · ` +
       `<strong>${linesIn}</strong> → <strong>${linesOut}</strong> lines` +
       (r.files.length > 1 ? ` in ${r.files.length} files` : "");
-    for (const [level, text] of r.files[state.active].messages) {
+    const archive = archiveOf(state.sources[state.active]);
+    const notes = archive && archive.others
+      ? [["info", `The ${plural(archive.others, "other file")} of ${archive.name} stay as they are.`]] : [];
+    for (const [level, text] of [...r.files[state.active].messages, ...notes]) {
       const msg = document.createElement("span");
       msg.className = `msg ${level}`;
       msg.title = text;
@@ -752,12 +878,20 @@ function download() {
   const source = state.sources[state.active];
   const file = currentFile();
   if (!source || !file) return;
-  saveBlob(new Blob([encode(source, file.text)], { type: "text/x-tex" }), source.name);
+  saveBlob(new Blob([encode(source, file.text)], { type: "text/x-tex" }), source.name.split("/").pop());
 }
 
+function zipName() {
+  return state.archives.length === 1 ? `clean-${state.archives[0].name}` : "tex-tools.zip";
+}
+
+// The files of the opened zip files with the cleaned files in place of the
+// original ones, and the other open files
 function downloadAll() {
   if (!state.response) return;
   state.zipId += 1;
+  state.zipName = zipName();
+  toast(`Writing ${state.zipName}…`);
   worker.postMessage({
     type: "zip",
     id: state.zipId,
@@ -765,13 +899,14 @@ function downloadAll() {
       name: source.name, text: state.response.files[idx].text,
       encoding: source.encoding, bom: source.bom,
     })),
+    archives: state.archives.map((archive) => archive.data),
   });
 }
 
 function saveZip(data) {
   if (data.id !== state.zipId) return;
   if (data.error) toast(`Could not zip the files: ${data.error}`);
-  else saveBlob(new Blob([data.data], { type: "application/zip" }), ZIP_NAME);
+  else saveBlob(new Blob([data.data], { type: "application/zip" }), state.zipName);
 }
 
 $("#download").addEventListener("click", download);
@@ -789,7 +924,8 @@ $("#copy").addEventListener("click", async () => {
 document.addEventListener("keydown", (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key === "s") {
     event.preventDefault();
-    download();
+    if (state.archives.length) downloadAll();
+    else download();
   }
 });
 

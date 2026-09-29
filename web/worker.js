@@ -1,11 +1,12 @@
 // Runs textools with Pyodide, so that the page stays responsive while Python
-// works. Only the latest request to run is processed.
+// works. Only the latest request to run is processed, after the zip files to
+// read or write.
 import { loadPyodide } from "./pyodide/pyodide.mjs";
 
 let bridge = null;
 let latest = null;
 let scheduled = false;
-const zips = [];
+const jobs = []; // zip files to read ("unzip") or write ("zip")
 
 async function init() {
   postMessage({ type: "progress", text: "Starting Python…" });
@@ -25,15 +26,19 @@ async function init() {
 function process() {
   scheduled = false;
   if (!bridge) return;
-  while (zips.length) {
-    const { id, files } = zips.shift();
+  while (jobs.length) {
+    const job = jobs.shift();
     try {
-      const proxy = bridge.zip_files(JSON.stringify({ files }));
-      const data = proxy.toJs();
-      proxy.destroy();
-      postMessage({ type: "zip", id, data }, [data.buffer]);
+      if (job.type === "unzip") {
+        postMessage({ type: "unzip", id: job.id, response: bridge.read_zip(job.data) });
+      } else {
+        const proxy = bridge.zip_files(JSON.stringify({ files: job.files }), ...job.archives);
+        const data = proxy.toJs();
+        proxy.destroy();
+        postMessage({ type: "zip", id: job.id, data }, [data.buffer]);
+      }
     } catch (err) {
-      postMessage({ type: "zip", id, error: pythonError(err) });
+      postMessage({ type: job.type, id: job.id, error: pythonError(err) });
     }
   }
   if (!latest) return;
@@ -63,7 +68,7 @@ function schedule() {
 
 self.onmessage = (event) => {
   if (event.data.type === "run") latest = event.data;
-  else if (event.data.type === "zip") zips.push(event.data);
+  else if (event.data.type === "zip" || event.data.type === "unzip") jobs.push(event.data);
   else return;
   schedule();
 };
