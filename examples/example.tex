@@ -1,0 +1,55 @@
+% !TEX program = pdflatex
+%
+% example.tex: a paper with many comments, as it may look before it is
+% uploaded to arXiv. Switch the steps on and off to see what they remove.
+%
+\documentclass{article}
+\usepackage{amsmath,amssymb}
+\usepackage{listings}
+\usepackage{hyperref}
+
+% TODO: pick a better title
+\newcommand{\R}{\mathbb{R}}% the real numbers
+\newcommand{\norm}[1]{%
+  \left\lVert #1 \right\rVert% no space here
+}
+
+\title{Removing Comments}  % working title
+\author{A. Author}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+% Reviewer 2 asked for more motivation.
+% We should cite Knuth here.
+Comments are useful while writing, % but not in the final version
+but they end up in the source that you upload.	% e.g., to arXiv
+About 20\% of this file are comments.
+
+%\section{Old section}
+%This section was removed after the first review.
+
+
+\section{Results}
+The norm is
+\[
+  \norm{x} = \sqrt{x_1^2 + x_2^2} % Euclidean
+  % \norm{x}_1 = |x_1| + |x_2|
+  % was the first try
+\]
+for $x \in \R^2$. %TODO: generalize
+
+\begin{tabular}{ll}
+  Step & Result \\ % header
+  1 & 20\% \\
+\end{tabular}
+
+Mr.\ % a control space keeps its space
+Smith writes \verb|%| in the code, see \url{https://example.org/a%20b}.
+
+\begin{lstlisting}[language=Python]
+x = 7 % 3  # the modulo operator, not a comment
+\end{lstlisting}
+
+\end{document}
