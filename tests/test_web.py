@@ -28,6 +28,20 @@ def test_run():
     assert second["messages"] == [["info", "Kept the % in 1 inline verbatim."]]
 
 
+def test_run_excluded_file():
+    text = "% x\n\\verb|%| a % y\n"
+    response = _run({"sources": [{"name": "a.tex", "text": text,
+                                  "exclude": True},
+                                 {"name": "b.tex", "text": text}],
+                     "options": {}})
+    excluded, cleaned = response["files"]
+    assert excluded["text"] == text
+    assert excluded["comments"] == 0 and excluded["count"] == 2
+    assert excluded["kept"] == [] and excluded["messages"] == []
+    assert excluded["lines"] == [[0, 3, ""], [1, 14, ""]]
+    assert cleaned["comments"] == 2
+
+
 def test_run_with_steps_off():
     response = _run({"sources": [{"name": "a.tex", "text": "a % x\n"}],
                      "options": {"empty_comments": False,

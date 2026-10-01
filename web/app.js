@@ -18,8 +18,9 @@ const DEFAULT_SETTINGS = {
 
 const state = {
   settings: loadSettings(),
-  // {name, text, encoding, bom, archive} of the files. A file from a zip file
-  // has its path as name and the id of the zip file as archive.
+  // {name, text, encoding, bom, archive, excluded} of the files. A file from a
+  // zip file has its path as name and the id of the zip file as archive. An
+  // excluded file stays as it is.
   sources: [],
   archives: [], // {id, name, data, others, shown} of the opened zip files
   archiveId: 0,
@@ -162,7 +163,7 @@ function buildRequest() {
   const { comments, keep } = state.settings;
   const on = (value) => comments.enabled && value;
   return {
-    sources: state.sources.map(({ name, text }) => ({ name, text })),
+    sources: state.sources.map(({ name, text, excluded }) => ({ name, text, exclude: Boolean(excluded) })),
     options: {
       empty_comments: on(comments.empty),
       comment_lines: on(comments.lines),
@@ -281,7 +282,8 @@ function addSources(added, show = 0) {
   added.forEach((source, i) => {
     let idx = sources.findIndex((s) => s.name === source.name);
     if (idx >= 0) {
-      sources[idx] = { ...source, archive: sources[idx].archive ?? source.archive };
+      const old = sources[idx];
+      sources[idx] = { ...source, archive: old.archive ?? source.archive, excluded: old.excluded };
       replaced += 1;
     } else {
       idx = sources.push(source) - 1;
@@ -325,15 +327,23 @@ function addArchive({ id, name, data }, response) {
     return;
   }
   // A zip file with the name of an open one replaces it
+  // and keeps its excluded files
   const old = state.archives.find((archive) => archive.name === name);
+  const excluded = new Set(state.sources.filter((s) => old && s.archive === old.id && s.excluded)
+    .map((s) => s.name));
   if (old) state.sources = state.sources.filter((s) => s.archive !== old.id);
   state.archives = [...state.archives.filter((archive) => archive !== old),
     { id, name, data, others: response.others, shown: null }];
-  const files = response.files.map((file) => ({ ...file, archive: id }));
+  const files = response.files.map((file) => ({ ...file, archive: id, excluded: excluded.has(file.name) }));
   // Show the main file first
   addSources(files, Math.max(0, files.findIndex((file) => /\\documentclass/.test(file.text))));
-  toast(`Opened ${plural(files.length, ".tex file")} of ${name}` +
-    (response.others ? `. The ${plural(response.others, "other file")} stay as they are.` : ""));
+  toast(`Opened ${plural(files.length, ".tex file")} of ${name}.` +
+    (response.others ? ` ${othersStay(response.others)}` : ""));
+}
+
+function othersStay(count, name = "") {
+  const of = name ? ` of ${name}` : "";
+  return count === 1 ? `The other file${of} stays as it is.` : `The ${count} other files${of} stay as they are.`;
 }
 
 // Close the files for which `keep` is false, and show the same file as
@@ -451,13 +461,23 @@ function renderFileSelect() {
       }
       parent = groups.get(source.archive);
     }
-    const comments = files ? ` · ${plural(files[idx].comments, "comment")}` : "";
+    const comments = source.excluded ? " · excluded"
+      : files ? ` · ${plural(files[idx].comments, "comment")}` : "";
     parent.append(new Option(source.name + comments, String(idx)));
   });
   select.value = String(state.active);
 }
 
 $("#file-select").addEventListener("change", (event) => setActive(Number(event.target.value)));
+
+// Exclude the shown file: it is downloaded as it is, with its comments
+$("#exclude").addEventListener("change", (event) => {
+  const source = state.sources[state.active];
+  if (!source) return;
+  source.excluded = event.target.checked;
+  render();
+  schedule(0);
+});
 
 /* Paste */
 
@@ -676,9 +696,12 @@ function render() {
   zip.classList.toggle("primary", archives);
   $("#download-all-label").textContent = archives ? "Download .zip" : "All as .zip";
   zip.title = archives
-    ? `Download ${zipName()} with the comments removed from all .tex files, and the other files as they are (Ctrl+S)`
+    ? `Download ${zipName()} with the comments removed from its .tex files, and the other files as they are (Ctrl+S)`
     : "Download the results of all files in a .zip file";
   if (source && source.archive != null) archiveOf(source).shown = source.name;
+  // Files can be excluded, when there are several, e.g., in a zip file
+  $("#exclude-label").hidden = !source || (state.sources.length < 2 && source.archive == null);
+  $("#exclude").checked = Boolean(source && source.excluded);
   renderFiles();
   renderFileSelect();
   renderMeta(source, lines, file);
@@ -694,6 +717,10 @@ function renderMeta(source, lines, file) {
   ].filter(Boolean).join(" · ") : "";
   if (!file) {
     $("#result-meta").textContent = "";
+    return;
+  }
+  if (source.excluded) {
+    $("#result-meta").textContent = `Excluded: stays as it is · ${plural(file.count, "line")}`;
     return;
   }
   const removed = lines.length - file.count;
@@ -726,9 +753,11 @@ function renderStatus() {
     counts.innerHTML = `<strong>${comments}</strong> ${comments === 1 ? "comment" : "comments"} removed · ` +
       `<strong>${linesIn}</strong> → <strong>${linesOut}</strong> lines` +
       (r.files.length > 1 ? ` in ${r.files.length} files` : "");
+    const excluded = state.sources.filter((source) => source.excluded).length;
+    if (excluded) counts.innerHTML += ` · ${plural(excluded, "file")} excluded`;
     const archive = archiveOf(state.sources[state.active]);
     const notes = archive && archive.others
-      ? [["info", `The ${plural(archive.others, "other file")} of ${archive.name} stay as they are.`]] : [];
+      ? [["info", othersStay(archive.others, archive.name)]] : [];
     for (const [level, text] of [...r.files[state.active].messages, ...notes]) {
       const msg = document.createElement("span");
       msg.className = `msg ${level}`;
@@ -873,12 +902,17 @@ function saveBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
+// The text to download. An excluded file stays exactly as it is, also its
+// line endings.
+const outputText = (idx) =>
+  (state.sources[idx].excluded ? state.sources[idx].text : state.response.files[idx].text);
+
 // The file keeps its name, so that \input and \include still find it
 function download() {
   const source = state.sources[state.active];
-  const file = currentFile();
-  if (!source || !file) return;
-  saveBlob(new Blob([encode(source, file.text)], { type: "text/x-tex" }), source.name.split("/").pop());
+  if (!source || !currentFile()) return;
+  saveBlob(new Blob([encode(source, outputText(state.active))], { type: "text/x-tex" }),
+    source.name.split("/").pop());
 }
 
 function zipName() {
@@ -896,7 +930,7 @@ function downloadAll() {
     type: "zip",
     id: state.zipId,
     files: state.sources.map((source, idx) => ({
-      name: source.name, text: state.response.files[idx].text,
+      name: source.name, text: outputText(idx),
       encoding: source.encoding, bom: source.bom,
     })),
     archives: state.archives.map((archive) => archive.data),
@@ -912,10 +946,9 @@ function saveZip(data) {
 $("#download").addEventListener("click", download);
 $("#download-all").addEventListener("click", downloadAll);
 $("#copy").addEventListener("click", async () => {
-  const file = currentFile();
-  if (!file) return;
+  if (!currentFile()) return;
   try {
-    await navigator.clipboard.writeText(file.text);
+    await navigator.clipboard.writeText(outputText(state.active));
     toast("Copied the result to the clipboard");
   } catch {
     toast("Could not copy to the clipboard");

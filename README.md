@@ -15,7 +15,8 @@ files never leave your computer.
   environment, is marked purple.
 * Open the `.zip` of your project, e.g., from Overleaf, and download it with
   the comments removed from all its `.tex` files.  The other files, e.g.,
-  figures and the `.bib` file, and the folders stay as they are.
+  figures and the `.bib` file, and the folders stay as they are.  To keep
+  the comments of a `.tex` file, choose it and check _Exclude_.
 * Several files can be open at once, e.g., all the files of a paper.  Choose
   the shown file above the original, and download it, or all of them as a
   `.zip`.  Files keep their names, so that `\input` and `\include` still

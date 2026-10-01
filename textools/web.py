@@ -11,6 +11,8 @@ from dataclasses import asdict, fields
 from .comments import Options, remove_comments
 
 _OPTIONS = {_field.name for _field in fields(Options)}
+# For the files that are excluded, which stay as they are
+_UNCHANGED = Options(**{_name: False for _name in _OPTIONS})
 
 # The files that the web app opens from zip files and cleans, like TEX_FILE
 # in web/app.js
@@ -32,12 +34,13 @@ def _options(request):
 
 def run(request_json):
     """Remove the comments of the files of a request of the web app, see
-    `web/app.js`."""
+    `web/app.js`. The files with "exclude" stay as they are."""
     request = json.loads(request_json)
     options = _options(request)
     files = []
     for _source in request["sources"]:
-        result = remove_comments(_source["text"], options)
+        result = remove_comments(_source["text"], _UNCHANGED
+                                 if _source.get("exclude") else options)
         files.append({
             "text": result.text,
             "count": result.count,
