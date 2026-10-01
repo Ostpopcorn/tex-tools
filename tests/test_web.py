@@ -1,5 +1,7 @@
+import gzip
 import io
 import json
+import tarfile
 import zipfile
 
 from textools import web
@@ -50,7 +52,7 @@ def test_run_with_steps_off():
 
 
 def test_zip_files():
-    data = web.zip_files(json.dumps({"files": [
+    data = web.write_archive(json.dumps({"files": [
         {"name": "a.tex", "text": "ä\n", "encoding": "utf-8", "bom": True},
         {"name": "b.tex", "text": "ä\n", "encoding": "latin-1"}]}))
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
@@ -74,23 +76,23 @@ def _project():
 
 
 def test_read_zip():
-    response = json.loads(web.read_zip(_project()))
-    assert response == {"others": 2, "files": [
+    response = json.loads(web.read_archive(_project()))
+    assert response == {"kind": "zip", "compression": "", "others": 2, "files": [
         {"name": "main.tex", "text": "\\input{sections/intro} % x\n",
          "encoding": "utf-8", "bom": False},
         {"name": "sections/intro.tex", "text": "Caf\xe9 % x\r\n",
          "encoding": "latin-1", "bom": False}]}
-    assert "error" in json.loads(web.read_zip(b"not a zip file"))
+    assert "error" in json.loads(web.read_archive(b"not a zip file"))
 
 
 def test_zip_files_keeps_the_other_files():
     project = _project()
-    files = json.loads(web.read_zip(project))["files"]
+    files = json.loads(web.read_archive(project))["files"]
     response = _run({"sources": files, "options": {}})
     for _file, _result in zip(files, response["files"]):
         _file["text"] = _result["text"]
     files.append({"name": "new.tex", "text": "new\n"})
-    data = web.zip_files(json.dumps({"files": files}), project)
+    data = web.write_archive(json.dumps({"files": files}), project)
     with zipfile.ZipFile(io.BytesIO(project)) as before, \
             zipfile.ZipFile(io.BytesIO(data)) as after:
         assert after.namelist() == before.namelist() + ["new.tex"]
@@ -102,3 +104,91 @@ def test_zip_files_keeps_the_other_files():
         for name in ("figures/plot.png", "__MACOSX/._main.tex"):
             assert after.read(name) == before.read(name)
         assert after.read("new.tex") == b"new\n"
+
+
+def _arxiv():
+    """A .tar.gz like the source of a paper on arXiv."""
+    data = io.BytesIO()
+    with tarfile.open(fileobj=data, mode="w:gz") as archive:
+        for name, content, mode in [
+                ("./", None, 0o755),
+                ("./main.tex", b"\\input{sec/intro} % x\n", 0o644),
+                ("./sec", None, 0o755),
+                ("./sec/intro.tex", b"Intro. % y\n", 0o600),
+                ("./fig.pdf", b"%PDF-1.5 %\xe2\xe3", 0o644)]:
+            info = tarfile.TarInfo(name)
+            info.mtime, info.mode, info.uname = 1700000000, mode, "arxiv"
+            if content is None:
+                info.type = tarfile.DIRTYPE
+            else:
+                info.size = len(content)
+            archive.addfile(info, None if content is None
+                            else io.BytesIO(content))
+        link = tarfile.TarInfo("./figure.pdf")
+        link.type, link.linkname = tarfile.SYMTYPE, "fig.pdf"
+        archive.addfile(link)
+    return data.getvalue()
+
+
+def test_read_tar_gz():
+    response = json.loads(web.read_archive(_arxiv()))
+    assert response["kind"] == "tar" and response["compression"] == "gz"
+    assert [f["name"] for f in response["files"]] == ["./main.tex",
+                                                      "./sec/intro.tex"]
+    assert response["others"] == 1
+
+
+def test_write_tar_gz_keeps_the_other_files():
+    source = _arxiv()
+    files = json.loads(web.read_archive(source))["files"]
+    response = _run({"sources": files, "options": {}})
+    for _file, _result in zip(files, response["files"]):
+        _file["text"] = _result["text"]
+    data = web.write_archive(json.dumps({"files": files,
+                                         "format": "tar.gz"}), source)
+    assert data[:2] == b"\x1f\x8b"
+    with tarfile.open(fileobj=io.BytesIO(source)) as before, \
+            tarfile.open(fileobj=io.BytesIO(data)) as after:
+        assert after.getnames() == before.getnames()
+        assert after.extractfile("./main.tex").read() == \
+            b"\\input{sec/intro}\n"
+        assert after.extractfile("./sec/intro.tex").read() == b"Intro.\n"
+        assert after.extractfile("./fig.pdf").read() == \
+            before.extractfile("./fig.pdf").read()
+        for name in before.getnames():
+            old, new = before.getmember(name), after.getmember(name)
+            assert (new.mode, new.mtime, new.uname, new.type, new.linkname) \
+                == (old.mode, old.mtime, old.uname, old.type, old.linkname)
+
+
+def test_write_zip_from_tar_and_zip():
+    data = web.write_archive(json.dumps({"files": []}), _arxiv(), _project())
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        names = archive.namelist()
+        # the link of the tar file cannot be in a zip file
+        assert names[:4] == ["./", "./main.tex", "./sec/", "./sec/intro.tex"]
+        assert "./figure.pdf" not in names and "main.tex" in names
+        assert archive.getinfo("./sec/").is_dir()
+        assert archive.getinfo("./sec/intro.tex").external_attr >> 16 == \
+            0o100600
+
+
+def test_read_gzipped_file():
+    # a single file on arXiv is a gzipped .tex file, with or without a name
+    data = gzip.compress(b"a % b\n")
+    response = json.loads(web.read_archive(data))
+    assert response["kind"] == "file" and response["others"] == 0
+    assert response["files"] == [{"name": None, "text": "a % b\n",
+                                  "encoding": "utf-8", "bom": False}]
+    named = io.BytesIO()
+    with gzip.GzipFile("2401.00001v1.tex", "wb", fileobj=named) as _file:
+        _file.write(b"a % b\n")
+    response = json.loads(web.read_archive(named.getvalue()))
+    assert response["files"][0]["name"] == "2401.00001v1.tex"
+
+
+def test_read_archive_errors():
+    assert "PDF" in json.loads(web.read_archive(
+        gzip.compress(b"%PDF-1.5\n")))["error"]
+    assert "error" in json.loads(web.read_archive(b"\x1f\x8b broken"))
+    assert "not a .zip" in json.loads(web.read_archive(b"plain text"))["error"]

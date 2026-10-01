@@ -9,7 +9,9 @@ const SETTINGS_KEY = "textools.settings.v1";
 const THEME_KEY = "textools.theme";
 // The files that are cleaned, like _TEX_FILE in textools/web.py
 const TEX_FILE = /\.(tex|ltx|sty|cls|dtx|ins|bbx|cbx|lbx|tikz|pgf)$/i;
-const ZIP_FILE = /\.zip$/i;
+// Archives of projects, e.g., .zip from Overleaf, or .tar.gz from arXiv
+const ARCHIVE_FILE = /\.(zip|tar|tgz|gz)$/i;
+const ARCHIVE_TYPES = { zip: "application/zip", tar: "application/x-tar", "tar.gz": "application/gzip" };
 
 const DEFAULT_SETTINGS = {
   comments: { enabled: true, empty: true, lines: true, blank: true, space: true },
@@ -27,8 +29,8 @@ const state = {
   active: 0,    // the file shown in the panes
   response: null,
   runId: 0,
-  zipId: 0,
-  zipName: null,
+  packId: 0,
+  packName: null,
   ready: false,
   error: null,
   linkScroll: true,
@@ -132,12 +134,12 @@ worker.onmessage = ({ data }) => {
     if (data.id !== state.runId) return;
     setBusy(false);
     showError(data.message);
-  } else if (data.type === "unzip") {
-    const pending = unzipping.get(data.id);
-    unzipping.delete(data.id);
+  } else if (data.type === "unpack") {
+    const pending = unpacking.get(data.id);
+    unpacking.delete(data.id);
     if (pending) addArchive(pending, data.error ? { error: data.error } : JSON.parse(data.response));
-  } else if (data.type === "zip") {
-    saveZip(data);
+  } else if (data.type === "pack") {
+    savePacked(data);
   } else if (data.type === "fatal") {
     setEngine("error", "Python could not start");
     showError(`Python could not start: ${data.message}`);
@@ -272,6 +274,10 @@ function setSources(sources, active = 0) {
   schedule(0);
 }
 
+// The name of a file without ./ at the start, which is common in the .tar.gz
+// files from arXiv. The name stays as it is in the archive.
+const shownName = (name) => name.replace(/^(\.\/)+/, "");
+
 // Add files and show one of them, the first by default. A file with the
 // name of an open file replaces it, e.g., after you changed it, and keeps its
 // place in a zip file.
@@ -280,10 +286,13 @@ function addSources(added, show = 0) {
   let active = null;
   let replaced = 0;
   added.forEach((source, i) => {
-    let idx = sources.findIndex((s) => s.name === source.name);
+    let idx = sources.findIndex((s) => shownName(s.name) === shownName(source.name));
     if (idx >= 0) {
       const old = sources[idx];
-      sources[idx] = { ...source, archive: old.archive ?? source.archive, excluded: old.excluded };
+      // A file of an archive keeps its path, and a single file takes the
+      // path of the file in the archive that it replaces
+      sources[idx] = source.archive != null ? { ...source, excluded: old.excluded }
+        : { ...source, name: old.name, archive: old.archive, excluded: old.excluded };
       replaced += 1;
     } else {
       idx = sources.push(source) - 1;
@@ -294,26 +303,39 @@ function addSources(added, show = 0) {
   if (replaced) toast(`Updated ${plural(replaced, "open file")}`);
 }
 
-async function openFiles(files) {
-  const all = [...files];
-  const tex = all.filter((file) => TEX_FILE.test(file.name));
-  const zips = all.filter((file) => ZIP_FILE.test(file.name));
-  const skipped = all.length - tex.length - zips.length;
-  if (skipped) {
-    toast(`Skipped ${plural(skipped, "file")} that ${skipped === 1 ? "is" : "are"} not a .tex or .zip file`);
-  }
-  if (tex.length) addSources(await Promise.all(tex.map(readFile)));
-  for (const zip of zips) openZip(zip.name, new Uint8Array(await zip.arrayBuffer()));
+// Whether the start of a file is a zip, gzip, or tar file, e.g., the source
+// of arXiv without an extension, like 2401.12345v1
+function isArchive(bytes) {
+  const text = String.fromCharCode(...bytes.subarray(0, 4));
+  return text === "PK\x03\x04" || text === "PK\x05\x06" || (bytes[0] === 0x1f && bytes[1] === 0x8b) ||
+    String.fromCharCode(...bytes.subarray(257, 262)) === "ustar";
 }
 
-// Zip files are read by Python in the worker, which answers with their .tex
-// files. The zip files are kept to write them again with the cleaned files.
-const unzipping = new Map();
+async function openFiles(files) {
+  const tex = [];
+  const archives = [];
+  let skipped = 0;
+  for (const file of files) {
+    if (TEX_FILE.test(file.name)) tex.push(file);
+    else if (ARCHIVE_FILE.test(file.name) || isArchive(new Uint8Array(await file.slice(0, 512).arrayBuffer()))) {
+      archives.push(file);
+    } else skipped += 1;
+  }
+  if (skipped) {
+    toast(`Skipped ${plural(skipped, "file")} that ${skipped === 1 ? "is" : "are"} not .tex, .zip, or .tar.gz`);
+  }
+  if (tex.length) addSources(await Promise.all(tex.map(readFile)));
+  for (const file of archives) openArchive(file.name, new Uint8Array(await file.arrayBuffer()));
+}
 
-function openZip(name, data) {
+// Archives are read by Python in the worker, which answers with their .tex
+// files. The archives are kept to write them again with the cleaned files.
+const unpacking = new Map();
+
+function openArchive(name, data) {
   state.archiveId += 1;
-  unzipping.set(state.archiveId, { id: state.archiveId, name, data });
-  worker.postMessage({ type: "unzip", id: state.archiveId, data });
+  unpacking.set(state.archiveId, { id: state.archiveId, name, data });
+  worker.postMessage({ type: "unpack", id: state.archiveId, data });
   toast(`Opening ${name}…`);
 }
 
@@ -322,18 +344,28 @@ function addArchive({ id, name, data }, response) {
     toast(`Could not open ${name}: ${response.error}`);
     return;
   }
+  // A single gzipped file, e.g., the source of a paper with one file on
+  // arXiv, is opened like a .tex file
+  if (response.kind === "file") {
+    const [file] = response.files;
+    let fileName = (file.name || name.replace(/\.gz$/i, "")).split("/").pop();
+    if (!TEX_FILE.test(fileName)) fileName += ".tex";
+    addSources([{ ...file, name: fileName }]);
+    toast(`Opened ${fileName} from ${name}`);
+    return;
+  }
   if (!response.files.length) {
     toast(`There are no .tex files in ${name}`);
     return;
   }
-  // A zip file with the name of an open one replaces it
+  // An archive with the name of an open one replaces it
   // and keeps its excluded files
   const old = state.archives.find((archive) => archive.name === name);
   const excluded = new Set(state.sources.filter((s) => old && s.archive === old.id && s.excluded)
     .map((s) => s.name));
   if (old) state.sources = state.sources.filter((s) => s.archive !== old.id);
   state.archives = [...state.archives.filter((archive) => archive !== old),
-    { id, name, data, others: response.others, shown: null }];
+    { id, name, data, kind: response.kind, compression: response.compression, others: response.others, shown: null }];
   const files = response.files.map((file) => ({ ...file, archive: id, excluded: excluded.has(file.name) }));
   // Show the main file first
   addSources(files, Math.max(0, files.findIndex((file) => /\\documentclass/.test(file.text))));
@@ -463,7 +495,7 @@ function renderFileSelect() {
     }
     const comments = source.excluded ? " · excluded"
       : files ? ` · ${plural(files[idx].comments, "comment")}` : "";
-    parent.append(new Option(source.name + comments, String(idx)));
+    parent.append(new Option(shownName(source.name) + comments, String(idx)));
   });
   select.value = String(state.active);
 }
@@ -694,9 +726,9 @@ function render() {
   zip.hidden = state.sources.length < 2 && !archives;
   zip.disabled = !state.response;
   zip.classList.toggle("primary", archives);
-  $("#download-all-label").textContent = archives ? "Download .zip" : "All as .zip";
+  $("#download-all-label").textContent = archives ? `Download .${packFormat()}` : "All as .zip";
   zip.title = archives
-    ? `Download ${zipName()} with the comments removed from its .tex files, and the other files as they are (Ctrl+S)`
+    ? `Download ${packName()} with the comments removed from its .tex files, and the other files as they are (Ctrl+S)`
     : "Download the results of all files in a .zip file";
   if (source && source.archive != null) archiveOf(source).shown = source.name;
   // Files can be excluded, when there are several, e.g., in a zip file
@@ -711,7 +743,7 @@ function render() {
 function renderMeta(source, lines, file) {
   // The name is in the list of files, if there are several
   $("#original-meta").textContent = source ? [
-    state.sources.length < 2 ? source.name : null,
+    state.sources.length < 2 ? shownName(source.name) : null,
     plural(lines.length, "line"),
     source.encoding === "latin-1" ? "Latin-1" : null,
   ].filter(Boolean).join(" · ") : "";
@@ -915,20 +947,34 @@ function download() {
     source.name.split("/").pop());
 }
 
-function zipName() {
-  return state.archives.length === 1 ? `clean-${state.archives[0].name}` : "tex-tools.zip";
+// One archive is downloaded in its format, e.g., a .tar.gz from arXiv, and
+// several archives or files together in a .zip
+function packFormat() {
+  if (state.archives.length !== 1) return "zip";
+  const [archive] = state.archives;
+  if (archive.kind !== "tar") return "zip";
+  return archive.compression === "gz" ? "tar.gz" : "tar";
 }
 
-// The files of the opened zip files with the cleaned files in place of the
+function packName() {
+  if (state.archives.length !== 1) return "tex-tools.zip";
+  const format = packFormat();
+  const { name } = state.archives[0];
+  const extension = { zip: /\.zip$/i, tar: /\.tar$/i, "tar.gz": /\.(tar\.gz|tgz)$/i }[format];
+  return `clean-${name}${extension.test(name) ? "" : "." + format}`;
+}
+
+// The files of the opened archives with the cleaned files in place of the
 // original ones, and the other open files
 function downloadAll() {
   if (!state.response) return;
-  state.zipId += 1;
-  state.zipName = zipName();
-  toast(`Writing ${state.zipName}…`);
+  state.packId += 1;
+  state.packName = packName();
+  toast(`Writing ${state.packName}…`);
   worker.postMessage({
-    type: "zip",
-    id: state.zipId,
+    type: "pack",
+    id: state.packId,
+    format: packFormat(),
     files: state.sources.map((source, idx) => ({
       name: source.name, text: outputText(idx),
       encoding: source.encoding, bom: source.bom,
@@ -937,10 +983,13 @@ function downloadAll() {
   });
 }
 
-function saveZip(data) {
-  if (data.id !== state.zipId) return;
-  if (data.error) toast(`Could not zip the files: ${data.error}`);
-  else saveBlob(new Blob([data.data], { type: "application/zip" }), state.zipName);
+function savePacked(data) {
+  if (data.id !== state.packId) return;
+  if (data.error) toast(`Could not write ${state.packName}: ${data.error}`);
+  else {
+    const format = state.packName.endsWith(".tar") ? "tar" : state.packName.endsWith(".zip") ? "zip" : "tar.gz";
+    saveBlob(new Blob([data.data], { type: ARCHIVE_TYPES[format] }), state.packName);
+  }
 }
 
 $("#download").addEventListener("click", download);

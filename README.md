@@ -4,7 +4,7 @@ Tools for working with LaTeX files, in your browser.
 
 ## Web App
 The web app shows your file next to the result with the current settings,
-before you download it: open, drop, or paste (Ctrl+V) your `.tex` files or a `.zip` of your project.  It
+before you download it: open, drop, or paste (Ctrl+V) your `.tex` files, or a `.zip` or `.tar.gz` of your project.  It
 runs Python in your browser with [Pyodide](https://pyodide.org), so your
 files never leave your computer.
 
@@ -13,10 +13,13 @@ files never leave your computer.
 * Removed lines are marked red, and the removed end of a changed line is
   struck through.  Text that is kept on purpose, e.g., a `%` in a `verbatim`
   environment, is marked purple.
-* Open the `.zip` of your project, e.g., from Overleaf, and download it with
+* Open the `.zip` of your project, e.g., from Overleaf, or the source of a
+  paper from arXiv (a `.tar.gz`), and download it in the same format with
   the comments removed from all its `.tex` files.  The other files, e.g.,
   figures and the `.bib` file, and the folders stay as they are.  To keep
-  the comments of a `.tex` file, choose it and check _Exclude_.
+  the comments of a `.tex` file, choose it and check _Exclude_.  The source
+  of a paper with a single file on arXiv is a gzipped `.tex` file, which is
+  opened like a `.tex` file.
 * Several files can be open at once, e.g., all the files of a paper.  Choose
   the shown file above the original, and download it, or all of them as a
   `.zip`.  Files keep their names, so that `\input` and `\include` still

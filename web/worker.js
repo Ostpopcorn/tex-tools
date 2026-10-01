@@ -1,12 +1,12 @@
 // Runs textools with Pyodide, so that the page stays responsive while Python
-// works. Only the latest request to run is processed, after the zip files to
+// works. Only the latest request to run is processed, after the archives to
 // read or write.
 import { loadPyodide } from "./pyodide/pyodide.mjs";
 
 let bridge = null;
 let latest = null;
 let scheduled = false;
-const jobs = []; // zip files to read ("unzip") or write ("zip")
+const jobs = []; // archives to read ("unpack") or write ("pack")
 
 async function init() {
   postMessage({ type: "progress", text: "Starting Python…" });
@@ -29,13 +29,14 @@ function process() {
   while (jobs.length) {
     const job = jobs.shift();
     try {
-      if (job.type === "unzip") {
-        postMessage({ type: "unzip", id: job.id, response: bridge.read_zip(job.data) });
+      if (job.type === "unpack") {
+        postMessage({ type: "unpack", id: job.id, response: bridge.read_archive(job.data) });
       } else {
-        const proxy = bridge.zip_files(JSON.stringify({ files: job.files }), ...job.archives);
+        const request = JSON.stringify({ files: job.files, format: job.format });
+        const proxy = bridge.write_archive(request, ...job.archives);
         const data = proxy.toJs();
         proxy.destroy();
-        postMessage({ type: "zip", id: job.id, data }, [data.buffer]);
+        postMessage({ type: "pack", id: job.id, data }, [data.buffer]);
       }
     } catch (err) {
       postMessage({ type: job.type, id: job.id, error: pythonError(err) });
@@ -68,7 +69,7 @@ function schedule() {
 
 self.onmessage = (event) => {
   if (event.data.type === "run") latest = event.data;
-  else if (event.data.type === "zip" || event.data.type === "unzip") jobs.push(event.data);
+  else if (event.data.type === "pack" || event.data.type === "unpack") jobs.push(event.data);
   else return;
   schedule();
 };
