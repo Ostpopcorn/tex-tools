@@ -482,9 +482,11 @@ body:not(.has-files) .gutter { display: none; }
 }
 .l .t.empty-note { color: var(--muted); font-family: var(--ui-font); font-size: 12.5px; }
 
-/* Unchanged lines that are folded, in the same place in both panes */
+/* Unchanged lines that are folded, in the same place in both panes. A fold
+   is three lines high, so that it stands out from the lines. */
 .l.fold {
   align-items: center;
+  height: 4.8em;
   border-block: 2px solid var(--surface);
   background: var(--surface-3);
   background-clip: padding-box;
@@ -493,9 +495,9 @@ body:not(.has-files) .gutter { display: none; }
   user-select: none;
 }
 .l.fold .n { display: flex; justify-content: flex-end; color: inherit; }
-.l.fold .n svg { width: 13px; height: 13px; }
-.l.fold .t { font: 500 11.5px/22px var(--ui-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.l.fold:hover { background: var(--accent-soft); color: var(--accent); }
+.l.fold .n svg { width: 14px; height: 14px; }
+.l.fold .t { font: 500 12px var(--ui-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.l.fold:hover { background: color-mix(in srgb, var(--surface-3) 55%, var(--border-strong)); color: var(--text); }
 .l.fold:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* Badges move to a row below the text when they do not fit next to it */
