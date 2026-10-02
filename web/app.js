@@ -7,6 +7,7 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 // Bumped when the defaults change, so that they apply to everybody once
 const SETTINGS_KEY = "textools.settings.v1";
 const THEME_KEY = "textools.theme";
+const FOLD_KEY = "textools.fold";
 // The files that are cleaned, like _TEX_FILE in textools/web.py
 const TEX_FILE = /\.(tex|ltx|sty|cls|dtx|ins|bbx|cbx|lbx|tikz|pgf)$/i;
 // Archives of projects, e.g., .zip from Overleaf, or .tar.gz from arXiv
@@ -20,9 +21,10 @@ const DEFAULT_SETTINGS = {
 
 const state = {
   settings: loadSettings(),
-  // {name, text, encoding, bom, archive, excluded} of the files. A file from a
-  // zip file has its path as name and the id of the zip file as archive. An
-  // excluded file stays as it is.
+  // {name, text, encoding, bom, archive, excluded, unfolded} of the files. A
+  // file from a zip file has its path as name and the id of the zip file as
+  // archive. An excluded file stays as it is. Unfolded are the lines that you
+  // unfolded.
   sources: [],
   archives: [], // {id, name, data, others, shown} of the opened zip files
   archiveId: 0,
@@ -34,11 +36,15 @@ const state = {
   ready: false,
   error: null,
   linkScroll: true,
+  fold: loadJson(FOLD_KEY, false) === true,
+  folds: { original: [], result: [] }, // the folded lines of the shown file
 };
 
+// The element of each line of a pane is in lines, which is the fold for a
+// folded line. Shown is the source or the result in the pane.
 const panes = {
-  original: { el: $("#original"), lines: [], link: null, expected: null },
-  result: { el: $("#result"), lines: [], link: null, expected: null },
+  original: { el: $("#original"), lines: [], link: null, expected: null, shown: null },
+  result: { el: $("#result"), lines: [], link: null, expected: null, shown: null },
 };
 
 /* Helpers */
@@ -651,9 +657,11 @@ function keptLines(file) {
   return { lines, badges };
 }
 
-function renderOriginal(lines, file) {
+function renderOriginal(lines, file, folds) {
   const kept = keptLines(file);
-  const parts = lines.map((text, i) => {
+  const pane = panes.original;
+  pane.el.innerHTML = withFolds(lines.length, folds, (i) => {
+    const text = lines[i];
     const [out, keep, reason] = (file && file.lines[i]) || [i, text.length, ""];
     let cls = kept.lines.has(i) ? "kept" : "";
     let html;
@@ -668,11 +676,10 @@ function renderOriginal(lines, file) {
     }
     return lineHtml(i + 1, html, cls, kept.badges.get(i), REASONS[reason]);
   });
-  panes.original.el.innerHTML = parts.join("");
-  panes.original.lines = [...panes.original.el.children];
+  pane.lines = lineElements(pane.el, lines.length, folds);
 }
 
-function renderResult(original, file) {
+function renderResult(original, file, folds) {
   const pane = panes.result;
   if (!file) {
     pane.el.innerHTML = "";
@@ -684,9 +691,9 @@ function renderResult(original, file) {
   file.lines.forEach(([out, keep], i) => {
     if (out !== null && keep < original[i].length) changed.add(out);
   });
-  pane.el.innerHTML = lines.map((text, j) =>
-    lineHtml(j + 1, escapeHtml(text), changed.has(j) ? "chg" : "")).join("");
-  pane.lines = [...pane.el.children];
+  pane.el.innerHTML = withFolds(lines.length, folds, (j) =>
+    lineHtml(j + 1, escapeHtml(lines[j]), changed.has(j) ? "chg" : ""));
+  pane.lines = lineElements(pane.el, lines.length, folds);
   if (!lines.length) {
     pane.el.innerHTML = `<div class="l"><span class="n"></span>` +
       `<span class="t empty-note">Nothing is left of this file with these settings.</span></div>`;
@@ -698,15 +705,24 @@ function render() {
   const file = currentFile();
   document.body.classList.toggle("has-files", state.sources.length > 0);
   const lines = source ? splitLines(source.text) : [];
+  // A pane that shows the same as before stays at the same line, e.g., when
+  // lines are folded
+  const anchors = [[panes.original, source], [panes.result, file]]
+    .filter(([pane, shown]) => shown && pane.shown === shown)
+    .map(([pane]) => [pane, topLine(pane)]);
+  state.folds = foldsOf(source, lines, file);
   if (source) {
-    renderOriginal(lines, file);
-    renderResult(lines, file);
+    renderOriginal(lines, file, state.folds.original);
+    renderResult(lines, file, state.folds.result);
   } else {
     for (const pane of Object.values(panes)) {
       pane.el.innerHTML = "";
       pane.lines = [];
     }
   }
+  panes.original.shown = source;
+  panes.result.shown = file;
+  for (const [pane, anchor] of anchors) scrollToLine(pane, anchor);
   panes.original.link = panes.result.link = null;
   // The original stays where it is, and the result follows it
   if (state.linkScroll) align(panes.original, panes.result);
@@ -808,12 +824,148 @@ function renderStatus() {
   }
 }
 
+/* Folding */
+
+// Runs of unchanged lines are folded, except for a few lines around the
+// changes, so that you see what changed
+const FOLD_CONTEXT = 2; // unchanged lines shown before and after a change
+const FOLD_MIN = 3;     // fewer lines are not folded, since a fold is a line too
+
+const UNFOLD_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22v-6"/><path d="M12 8V2"/><path d="M4 12H2"/><path d="M10 12H8"/><path d="M16 12h-2"/><path d="M22 12h-2"/><path d="m15 19-3 3-3-3"/><path d="m15 5-3-3-3 3"/></svg>`;
+
+// The folded lines of a file as [start, end) in the original and the same
+// lines in the result. The changed and removed lines are shown, and the
+// kept text with a %, with the lines around them, and the lines that you
+// unfolded.
+function foldsOf(source, lines, file) {
+  const folds = { original: [], result: [] };
+  if (!state.fold || !source || !file) return folds;
+  const shown = new Uint8Array(lines.length);
+  const show = (i) => shown.fill(1, Math.max(0, i - FOLD_CONTEXT), i + FOLD_CONTEXT + 1);
+  file.lines.forEach(([out, keep], i) => {
+    if (out === null || keep < lines[i].length) show(i);
+  });
+  for (const { lines: [first, last] } of file.kept) {
+    show(first);
+    for (let i = first + 1; i <= last; i++) if (lines[i].includes("%")) show(i);
+  }
+  for (const i of source.unfolded || []) shown[i] = 1;
+  for (let start = 0; start < lines.length; start++) {
+    if (shown[start]) continue;
+    let end = start;
+    while (end < lines.length && !shown[end]) end++;
+    // The lines are unchanged, so they are in the result too
+    if (end - start >= FOLD_MIN) {
+      folds.original.push([start, end]);
+      folds.result.push([file.lines[start][0], file.lines[end - 1][0] + 1]);
+    }
+    start = end;
+  }
+  return folds;
+}
+
+// The HTML of the lines of a pane, with a fold in place of the folded lines
+function withFolds(count, folds, line) {
+  const parts = [];
+  let f = 0;
+  for (let i = 0; i < count; i++) {
+    const fold = folds[f];
+    if (fold && fold[0] === i) {
+      const text = plural(fold[1] - fold[0], "unchanged line");
+      parts.push(`<div class="l fold" role="button" tabindex="0" data-fold="${f}" title="Show the ${text}">` +
+        `<span class="n">${UNFOLD_ICON}</span><span class="t">${text}</span></div>`);
+      i = fold[1] - 1;
+      f += 1;
+    } else parts.push(line(i));
+  }
+  return parts.join("");
+}
+
+// The element of each line of a pane, which is the fold for a folded line
+function lineElements(el, count, folds) {
+  const lines = new Array(count);
+  let child = el.firstElementChild;
+  let f = 0;
+  for (let i = 0; i < count; child = child.nextElementSibling) {
+    const fold = folds[f];
+    if (fold && fold[0] === i) {
+      lines.fill(child, i, fold[1]);
+      i = fold[1];
+      f += 1;
+    } else lines[i++] = child;
+  }
+  return lines;
+}
+
+function unfold(idx) {
+  const source = state.sources[state.active];
+  const fold = state.folds.original[idx];
+  if (!source || !fold) return;
+  source.unfolded = source.unfolded || new Set();
+  for (let i = fold[0]; i < fold[1]; i++) source.unfolded.add(i);
+  render();
+}
+
+for (const pane of Object.values(panes)) {
+  pane.el.addEventListener("click", (event) => {
+    const fold = event.target.closest(".fold");
+    if (fold) unfold(Number(fold.dataset.fold));
+  });
+  pane.el.addEventListener("keydown", (event) => {
+    const fold = event.target.closest(".fold");
+    if (!fold || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    unfold(Number(fold.dataset.fold));
+    pane.el.focus({ preventScroll: true });
+  });
+}
+
+function renderFold() {
+  const button = $("#fold");
+  button.setAttribute("aria-pressed", String(state.fold));
+  button.title = state.fold
+    ? "Unchanged lines are folded. Click to show all lines."
+    : "Fold the unchanged lines, to see only what changed.";
+}
+
+// Folding again folds the lines that you unfolded too
+$("#fold").addEventListener("click", () => {
+  state.fold = !state.fold;
+  saveJson(FOLD_KEY, state.fold);
+  for (const source of state.sources) delete source.unfolded;
+  renderFold();
+  render();
+});
+renderFold();
+
 /* Linked scrolling */
 
 const other = (name) => (name === "original" ? "result" : "original");
 
 function resetScroll() {
   for (const pane of Object.values(panes)) setScroll(pane, 0);
+}
+
+// The first line at the top of a pane, and how far it is scrolled past it
+function topLine(pane) {
+  const { lines } = pane;
+  if (!lines.length) return null;
+  const top = pane.el.scrollTop;
+  let lo = 0;
+  let hi = lines.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (lines[mid].offsetTop + lines[mid].offsetHeight <= top) lo = mid + 1;
+    else hi = mid;
+  }
+  return { line: lo, offset: top - lines[lo].offsetTop };
+}
+
+// Scroll a pane to the same line as before, or its fold
+function scrollToLine(pane, anchor) {
+  const el = anchor && pane.lines[Math.min(anchor.line, pane.lines.length - 1)];
+  if (!el) return;
+  setScroll(pane, el.offsetTop + Math.min(anchor.offset, el.offsetHeight - 1));
 }
 
 // Scroll a pane from the code. Its scroll event is recognized by the

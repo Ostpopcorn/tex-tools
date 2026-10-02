@@ -13,6 +13,9 @@ files never leave your computer.
 * Removed lines are marked red, and the removed end of a changed line is
   struck through.  Text that is kept on purpose, e.g., a `%` in a `verbatim`
   environment, is marked purple.
+* Click the fold button between the panes to fold the unchanged lines, so
+  that you see only what changed, with two lines around each change.  Click
+  a fold to show its lines.
 * Open the `.zip` of your project, e.g., from Overleaf, or the source of a
   paper from arXiv (a `.tar.gz`), and download it in the same format with
   the comments removed from all its `.tex` files.  The other files, e.g.,

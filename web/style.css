@@ -381,12 +381,12 @@ body:not(.has-files) .add-wrap { display: none; }
   padding: 0 16px 10px;
 }
 
-/* Between the panes: the toggle for linked scrolling */
+/* Between the panes: the toggles for linked scrolling and folding */
 .gutter { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .gutter::before, .gutter::after { content: ""; flex: 1; width: 1px; background: var(--border); }
 .gutter.linked::before, .gutter.linked::after { background: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 body:not(.has-files) .gutter { display: none; }
-.link-toggle {
+.gutter-toggle {
   display: grid;
   place-items: center;
   width: 30px;
@@ -399,11 +399,11 @@ body:not(.has-files) .gutter { display: none; }
   cursor: pointer;
   transition: all .12s;
 }
-.link-toggle:hover { color: var(--text); border-color: var(--accent); }
-.link-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.link-toggle[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-.link-toggle[aria-pressed="true"] .icon-unlinked,
-.link-toggle[aria-pressed="false"] .icon-linked { display: none; }
+.gutter-toggle:hover { color: var(--text); border-color: var(--accent); }
+.gutter-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gutter-toggle[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+#link-scroll[aria-pressed="true"] .icon-unlinked,
+#link-scroll[aria-pressed="false"] .icon-linked { display: none; }
 
 .pane {
   position: relative;
@@ -481,6 +481,22 @@ body:not(.has-files) .gutter { display: none; }
   text-decoration-color: color-mix(in srgb, var(--rm-bar) 60%, transparent);
 }
 .l .t.empty-note { color: var(--muted); font-family: var(--ui-font); font-size: 12.5px; }
+
+/* Unchanged lines that are folded, in the same place in both panes */
+.l.fold {
+  align-items: center;
+  border-block: 2px solid var(--surface);
+  background: var(--surface-3);
+  background-clip: padding-box;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.l.fold .n { display: flex; justify-content: flex-end; color: inherit; }
+.l.fold .n svg { width: 13px; height: 13px; }
+.l.fold .t { font: 500 11.5px/22px var(--ui-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.l.fold:hover { background: var(--accent-soft); color: var(--accent); }
+.l.fold:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* Badges move to a row below the text when they do not fit next to it */
 .l.has-badges { flex-wrap: wrap; }
