@@ -5,9 +5,12 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
 // Bumped when the defaults change, so that they apply to everybody once
-const SETTINGS_KEY = "textools.settings.v1";
+const SETTINGS_KEY = "textools.settings.v2";
+const OLD_SETTINGS_KEY = "textools.settings.v1";
 const THEME_KEY = "textools.theme";
 const FOLD_KEY = "textools.fold";
+const VIEW_KEY = "textools.view";
+const SIDEBAR_KEY = "textools.sidebar-hidden.v1";
 // The files that are cleaned, like _TEX_FILE in textools/web.py
 const TEX_FILE = /\.(tex|ltx|sty|cls|dtx|ins|bbx|cbx|lbx|tikz|pgf)$/i;
 // Archives of projects, e.g., .zip from Overleaf, or .tar.gz from arXiv
@@ -15,9 +18,12 @@ const ARCHIVE_FILE = /\.(zip|tar|tgz|gz)$/i;
 const ARCHIVE_TYPES = { zip: "application/zip", tar: "application/x-tar", "tar.gz": "application/gzip" };
 
 const DEFAULT_SETTINGS = {
-  comments: { enabled: true, empty: true, lines: true, blank: true, space: true },
+  comments: { empty: true, lines: true, blank: true, space: true },
   keep: { verbatim: true, magic: true },
 };
+// The original, both side by side, or the result
+const VIEWS = ["original", "both", "result"];
+const DEFAULT_VIEW = "both";
 
 const state = {
   settings: loadSettings(),
@@ -36,6 +42,7 @@ const state = {
   ready: false,
   error: null,
   linkScroll: true,
+  view: VIEWS.includes(loadJson(VIEW_KEY, DEFAULT_VIEW)) ? loadJson(VIEW_KEY, DEFAULT_VIEW) : DEFAULT_VIEW,
   fold: loadJson(FOLD_KEY, false) === true,
   folds: { original: [], result: [] }, // the folded lines of the shown file
 };
@@ -74,8 +81,16 @@ function merge(base, extra) {
   return result;
 }
 
+// Version 1 had a switch for all steps of removing comments. Its settings
+// are converted so that they give the same result.
 function loadSettings() {
-  return merge(DEFAULT_SETTINGS, loadJson(SETTINGS_KEY, {}));
+  const stored = loadJson(SETTINGS_KEY, null);
+  if (stored) return merge(DEFAULT_SETTINGS, stored);
+  const old = loadJson(OLD_SETTINGS_KEY, {});
+  if (old && old.comments && old.comments.enabled === false) {
+    old.comments = { empty: false, lines: false, blank: false, space: false };
+  }
+  return merge(DEFAULT_SETTINGS, old);
 }
 
 function saveSettings() {
@@ -169,14 +184,13 @@ function setBusy(busy) {
 
 function buildRequest() {
   const { comments, keep } = state.settings;
-  const on = (value) => comments.enabled && value;
   return {
     sources: state.sources.map(({ name, text, excluded }) => ({ name, text, exclude: Boolean(excluded) })),
     options: {
-      empty_comments: on(comments.empty),
-      comment_lines: on(comments.lines),
-      blank_lines: on(comments.blank),
-      space_before: on(comments.space),
+      empty_comments: comments.empty,
+      comment_lines: comments.lines,
+      blank_lines: comments.blank,
+      space_before: comments.space,
       keep_verbatim: keep.verbatim,
       keep_magic: keep.magic,
     },
@@ -211,29 +225,55 @@ function applySettingsToUI() {
   for (const input of $$("[data-setting]")) {
     input.checked = Boolean(getPath(state.settings, input.dataset.setting));
   }
-  for (const card of $$(".card")) {
-    const toggle = $(".card-head [data-setting]", card);
-    const on = toggle ? toggle.checked : true;
-    card.classList.toggle("on", on && Boolean(toggle));
-    card.classList.toggle("off", !on);
-  }
-}
-
-// Changing a step of a card that is off turns the card on
-function enableSectionOf(input) {
-  const toggle = $(".card-head [data-setting]", input.closest(".card"));
-  if (toggle && !toggle.checked) setPath(state.settings, toggle.dataset.setting, true);
 }
 
 $("#options").addEventListener("change", (event) => {
   const input = event.target;
   if (!input.dataset.setting) return;
   setPath(state.settings, input.dataset.setting, input.checked);
-  if (input.closest(".card-body")) enableSectionOf(input);
   saveSettings();
-  applySettingsToUI();
   schedule();
 });
+
+/* Sidebar with the settings, like in BibTeX Tools */
+
+// On wide screens, the settings are next to the panes and can be hidden to
+// a bar on the left, which is remembered. On narrow screens, they are hidden
+// to the bar and open over the panes.
+const narrow = matchMedia("(max-width: 1100px)");
+const sidebar = { hidden: loadJson(SIDEBAR_KEY, false) === true, open: false };
+
+function renderSidebar() {
+  const shown = narrow.matches ? sidebar.open : !sidebar.hidden;
+  document.body.classList.toggle("settings-shown", shown);
+  document.body.classList.toggle("settings-overlay", narrow.matches && shown);
+  $("#sidebar-show").setAttribute("aria-expanded", String(shown));
+}
+
+function showSettings(show) {
+  if (narrow.matches) {
+    sidebar.open = show;
+  } else {
+    sidebar.hidden = !show;
+    saveJson(SIDEBAR_KEY, sidebar.hidden);
+  }
+  renderSidebar();
+  $(show ? "#sidebar-hide" : "#sidebar-show").focus();
+}
+
+$("#rail").addEventListener("click", () => showSettings(true));
+$("#sidebar-hide").addEventListener("click", () => showSettings(false));
+$("#sidebar-backdrop").addEventListener("click", () => showSettings(false));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && narrow.matches && sidebar.open && !document.querySelector("dialog[open]")) {
+    showSettings(false);
+  }
+});
+narrow.addEventListener("change", () => {
+  sidebar.open = false;
+  renderSidebar();
+});
+renderSidebar();
 
 /* Files */
 
@@ -725,7 +765,7 @@ function render() {
   for (const [pane, anchor] of anchors) scrollToLine(pane, anchor);
   panes.original.link = panes.result.link = null;
   // The original stays where it is, and the result follows it
-  if (state.linkScroll) align(panes.original, panes.result);
+  if (linked()) align(panes.original, panes.result);
 
   const overlay = $("#overlay");
   const waiting = source && (!state.ready || !file);
@@ -938,9 +978,56 @@ $("#fold").addEventListener("click", () => {
 });
 renderFold();
 
+/* Views: the original, both side by side, or the result, like in PDF
+   Splitter */
+
+function renderView() {
+  for (const view of VIEWS) document.body.classList.toggle(`view-${view}`, state.view === view);
+  for (const input of $$("#views input")) input.checked = input.value === state.view;
+  // The list of files and Exclude are above the shown pane
+  const head = $(state.view === "result" ? "#pane-result .pane-head h2" : "#pane-original .pane-head h2");
+  head.after($("#file-select"), $("#exclude-label"));
+  for (const pane of Object.values(panes)) pane.link = null;
+}
+
+// The pane of a view with one pane, and the original for both
+const paneOf = (view) => (view === "result" ? panes.result : panes.original);
+
+// The line in the other pane for a line of a pane: the same line, or else
+// the next line that is left in the result
+function otherLine(from, line) {
+  const file = currentFile();
+  if (!file) return line;
+  if (from === panes.original) {
+    const next = file.lines.slice(line).find(([out]) => out !== null);
+    return next ? next[0] : file.count - 1;
+  }
+  const idx = file.lines.findIndex(([out]) => out !== null && out >= line);
+  return idx < 0 ? file.lines.length - 1 : idx;
+}
+
+$("#views").addEventListener("change", (event) => {
+  const view = event.target.value;
+  if (!VIEWS.includes(view)) return;
+  // The view shows the same line at the top: a pane that is shown before
+  // and after stays where it is, and the other pane follows it
+  const before = state.view === "both" ? paneOf(view) : paneOf(state.view);
+  const after = view === "both" ? before : paneOf(view);
+  const anchor = topLine(before);
+  state.view = view;
+  saveJson(VIEW_KEY, view);
+  renderView();
+  if (anchor) {
+    scrollToLine(after, after === before ? anchor : { ...anchor, line: otherLine(before, anchor.line) });
+  }
+  if (linked()) align(after, after === panes.original ? panes.result : panes.original);
+});
+renderView();
+
 /* Linked scrolling */
 
 const other = (name) => (name === "original" ? "result" : "original");
+const linked = () => state.linkScroll && state.view === "both";
 
 function resetScroll() {
   for (const pane of Object.values(panes)) setScroll(pane, 0);
@@ -949,7 +1036,7 @@ function resetScroll() {
 // The first line at the top of a pane, and how far it is scrolled past it
 function topLine(pane) {
   const { lines } = pane;
-  if (!lines.length) return null;
+  if (!lines.length || !pane.el.clientHeight) return null; // hidden
   const top = pane.el.scrollTop;
   let lo = 0;
   let hi = lines.length - 1;
@@ -1040,7 +1127,7 @@ for (const name of ["original", "result"]) {
   pane.el.addEventListener("scroll", () => {
     if (pane.expected !== null && Math.abs(pane.el.scrollTop - pane.expected) < 1) return;
     pane.expected = null;
-    if (state.linkScroll) align(pane, panes[other(name)]);
+    if (linked()) align(pane, panes[other(name)]);
   }, { passive: true });
 }
 
@@ -1062,7 +1149,7 @@ function renderLinkScroll() {
 $("#link-scroll").addEventListener("click", () => {
   state.linkScroll = !state.linkScroll;
   renderLinkScroll();
-  if (state.linkScroll) align(panes.original, panes.result);
+  if (linked()) align(panes.original, panes.result);
 });
 renderLinkScroll();
 

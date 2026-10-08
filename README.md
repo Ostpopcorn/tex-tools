@@ -10,12 +10,14 @@ files never leave your computer.
 
 ![Screenshot of the web app](web/screenshot.png)
 
+* The settings are in a sidebar on the left, each with an example.  Hide
+  them to a bar on the left to make room for the panes.
 * Removed lines are marked red, and the removed end of a changed line is
   struck through.  Text that is kept on purpose, e.g., a `%` in a `verbatim`
   environment, is marked purple.
-* Click the fold button between the panes to fold the unchanged lines, so
-  that you see only what changed, with two lines around each change.  Click
-  a fold to show its lines.
+* Show the original, both side by side, or the result.  The fold button next
+  to the views folds the unchanged lines, so that you see only what changed,
+  with two lines around each change.  Click a fold to show its lines.
 * Open the `.zip` of your project, e.g., from Overleaf, or the source of a
   paper from arXiv (a `.tar.gz`), and download it in the same format with
   the comments removed from all its `.tex` files.  The other files, e.g.,
@@ -24,7 +26,7 @@ files never leave your computer.
   of a paper with a single file on arXiv is a gzipped `.tex` file, which is
   opened like a `.tex` file.
 * Several files can be open at once, e.g., all the files of a paper.  Choose
-  the shown file above the original, and download it, or all of them as a
+  the shown file above the pane, and download it, or all of them as a
   `.zip`.  Files keep their names, so that `\input` and `\include` still
   find them.
 * Files that are not UTF-8 are read and saved as Latin-1, and line endings
