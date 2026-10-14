@@ -26,6 +26,12 @@ files never leave your computer.
   the comments of a `.tex` file, choose it and check _Exclude_.  The source
   of a paper with a single file on arXiv is a gzipped `.tex` file, which is
   opened like a `.tex` file.
+* The cleaned files are LaTeX files (`.tex`, `.ltx`, `.sty`, `.cls`,
+  `.ins`), TikZ and PGF files (`.tikz`, `.pgf`), TikZiT styles
+  (`.tikzstyles`), biblatex styles (`.bbx`, `.cbx`, `.lbx`, `.dbx`), and the
+  LaTeX part of figures from Inkscape (`.pdf_tex`, `.eps_tex`, `.ps_tex`).
+  `.dtx` files stay as they are, since their `%` lines are their
+  documentation.
 * Several files can be open at once, e.g., all the files of a paper.  Choose
   the shown file in the panel or above the pane, and download it, or all of them as a
   `.zip`.  Files keep their names, so that `\input` and `\include` still

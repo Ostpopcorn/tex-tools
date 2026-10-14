@@ -18,9 +18,12 @@ _OPTIONS = {_field.name for _field in fields(Options)}
 _UNCHANGED = Options(**{_name: False for _name in _OPTIONS})
 
 # The files that the web app opens from archives and cleans, like TEX_FILE
-# in web/app.js
-_TEX_FILE = re.compile(r"\.(tex|ltx|sty|cls|dtx|ins|bbx|cbx|lbx|tikz|pgf)$",
-                       re.IGNORECASE)
+# in web/app.js: LaTeX, TikZ and PGF, TikZiT styles, biblatex styles, and
+# the LaTeX part of figures from Inkscape. Not .dtx files, whose % lines are
+# their documentation and the guards of docstrip.
+_TEX_FILE = re.compile(
+    r"\.(tex|ltx|sty|cls|ins|bbx|cbx|lbx|dbx|tikz|tikzstyles|pgf|pdf_tex|eps_tex|ps_tex)$",
+    re.IGNORECASE)
 _BOM = b"\xef\xbb\xbf"
 
 

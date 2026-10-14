@@ -12,7 +12,7 @@ const FOLD_KEY = "textools.fold";
 const VIEW_KEY = "textools.view";
 const SIDEBAR_KEY = "textools.sidebar-hidden.v1";
 // The files that are cleaned, like _TEX_FILE in textools/web.py
-const TEX_FILE = /\.(tex|ltx|sty|cls|dtx|ins|bbx|cbx|lbx|tikz|pgf)$/i;
+const TEX_FILE = /\.(tex|ltx|sty|cls|ins|bbx|cbx|lbx|dbx|tikz|tikzstyles|pgf|pdf_tex|eps_tex|ps_tex)$/i;
 // Archives of projects, e.g., .zip from Overleaf, or .tar.gz from arXiv
 const ARCHIVE_FILE = /\.(zip|tar|tgz|gz)$/i;
 const ARCHIVE_TYPES = { zip: "application/zip", tar: "application/x-tar", "tar.gz": "application/gzip" };

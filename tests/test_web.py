@@ -85,6 +85,16 @@ def test_read_zip():
     assert "error" in json.loads(web.read_archive(b"not a zip file"))
 
 
+def test_is_tex():
+    for name in ["main.tex", "figs/plot.TIKZ", "styles.tikzstyles", "fig.pgf",
+                 "drawing.pdf_tex", "drawing.eps_tex", "my.sty", "my.dbx"]:
+        assert web.is_tex(name), name
+    # .dtx files are documentation in comments, and the copies of macOS
+    for name in ["pkg.dtx", "refs.bib", "main.bbl", "fig.pdf", "notex",
+                 "__MACOSX/main.tex", "sections/._intro.tex"]:
+        assert not web.is_tex(name), name
+
+
 def test_zip_files_keeps_the_other_files():
     project = _project()
     files = json.loads(web.read_archive(project))["files"]
