@@ -32,7 +32,7 @@ const state = {
   // archive. An excluded file stays as it is. Unfolded are the lines that you
   // unfolded.
   sources: [],
-  archives: [], // {id, name, data, others, shown} of the opened zip files
+  archives: [], // {id, name, data, kind, compression, others} of the opened archives
   archiveId: 0,
   active: 0,    // the file shown in the panes
   response: null,
@@ -262,7 +262,7 @@ function showSettings(show) {
 }
 
 $("#rail").addEventListener("click", () => showSettings(true));
-$("#sidebar-hide").addEventListener("click", () => showSettings(false));
+$(".sidebar-head").addEventListener("click", () => showSettings(false));
 $("#sidebar-backdrop").addEventListener("click", () => showSettings(false));
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && narrow.matches && sidebar.open && !document.querySelector("dialog[open]")) {
@@ -411,7 +411,7 @@ function addArchive({ id, name, data }, response) {
     .map((s) => s.name));
   if (old) state.sources = state.sources.filter((s) => s.archive !== old.id);
   state.archives = [...state.archives.filter((archive) => archive !== old),
-    { id, name, data, kind: response.kind, compression: response.compression, others: response.others, shown: null }];
+    { id, name, data, kind: response.kind, compression: response.compression, others: response.others }];
   const files = response.files.map((file) => ({ ...file, archive: id, excluded: excluded.has(file.name) }));
   // Show the main file first
   addSources(files, Math.max(0, files.findIndex((file) => /\\documentclass/.test(file.text))));
@@ -462,63 +462,73 @@ const FILE_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a
 
 const ZIP_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>`;
 
-function chip({ icon, name, comments, title, active, onOpen, onClose }) {
-  const el = document.createElement("span");
-  el.className = "chip" + (active ? " active" : "");
-  const open = document.createElement("button");
-  open.className = "chip-open";
-  open.title = title;
-  open.setAttribute("aria-pressed", String(active));
-  open.innerHTML = icon;
-  open.append(name);
-  if (comments !== null) {
-    const count = document.createElement("span");
-    count.className = "count";
-    count.textContent = `· ${comments}`;
-    open.title += ` (${plural(comments, "comment")} removed)`;
-    open.append(count);
-  }
-  open.addEventListener("click", onOpen);
-  const close = document.createElement("button");
-  close.className = "chip-close";
-  close.textContent = "×";
-  close.title = `Close ${name}`;
-  close.addEventListener("click", onClose);
-  el.append(open, close);
-  return el;
-}
-
-// A chip for each file, and one for each zip file with all its files
+// The open files at the top of the panel: each file, and each archive with
+// its .tex files, with the number of removed comments. Clicking a file shows
+// it in the panes.
 function renderFiles() {
+  const list = $("#files");
   const files = state.response ? state.response.files : null;
-  const shown = state.sources[state.active];
-  const chips = [];
+  // The archives keep where their files are scrolled, and the shown file
+  // keeps the focus
+  const scrolled = new Map($$(".file-members", list).map((el) => [el.dataset.archive, el.scrollTop]));
+  const focused = list.contains(document.activeElement) && document.activeElement.matches(".file-open");
+
+  const span = (className, textContent) => Object.assign(document.createElement("span"), { className, textContent });
+  const fileButton = (idx, name, icon = "") => {
+    const source = state.sources[idx];
+    const button = Object.assign(document.createElement("button"), {
+      className: "file-open", title: `Show ${shownName(source.name)}`, onclick: () => showFile(idx),
+    });
+    button.dataset.idx = String(idx);
+    button.setAttribute("aria-current", String(idx === state.active));
+    button.innerHTML = icon;
+    button.append(span("file-name", name), source.excluded ? span("file-count excluded", "excluded")
+      : span("file-count", files ? plural(files[idx].comments, "comment") : ""));
+    return button;
+  };
+  const closeButton = (name, keep) => Object.assign(document.createElement("button"), {
+    className: "btn ghost tiny icon-btn", textContent: "×", title: `Close ${name}`,
+    onclick: () => closeSources(keep),
+  });
+
+  const rows = [];
   state.sources.forEach((source, idx) => {
     if (source.archive == null) {
-      chips.push(chip({
-        icon: FILE_ICON, name: source.name, comments: files ? files[idx].comments : null,
-        title: `Show ${source.name}`, active: idx === state.active,
-        onOpen: () => setActive(idx), onClose: () => closeSources((s) => s !== source),
-      }));
+      const row = Object.assign(document.createElement("div"), { className: "file-field" });
+      row.append(fileButton(idx, source.name, FILE_ICON), closeButton(source.name, (s) => s !== source));
+      rows.push(row);
       return;
     }
     const archive = archiveOf(source);
     if (state.sources.findIndex((s) => s.archive === archive.id) !== idx) return;
     const members = state.sources.map((s, i) => [s, i]).filter(([s]) => s.archive === archive.id);
-    chips.push(chip({
-      icon: ZIP_ICON, name: archive.name,
-      comments: files ? members.reduce((sum, [, i]) => sum + files[i].comments, 0) : null,
-      title: `Show the files of ${archive.name}: ${plural(members.length, ".tex file")}` +
-        (archive.others ? ` and ${plural(archive.others, "other file")}` : ""),
-      active: shown.archive === archive.id,
-      onOpen: () => {
-        const last = members.find(([s]) => s.name === archive.shown);
-        setActive((last || members[0])[1]);
-      },
-      onClose: () => closeSources((s) => s.archive !== archive.id),
-    }));
+    const comments = files ? members.reduce((sum, [, i]) => sum + files[i].comments, 0) : null;
+    const head = Object.assign(document.createElement("div"), { className: "file-head", title: archive.name });
+    head.innerHTML = ZIP_ICON;
+    head.append(span("file-name", archive.name), span("file-count", comments === null ? "" : plural(comments, "comment")),
+      closeButton(archive.name, (s) => s.archive !== archive.id));
+    const tex = Object.assign(document.createElement("div"), { className: "file-members" });
+    tex.dataset.archive = String(archive.id);
+    tex.setAttribute("aria-label", `The .tex files of ${archive.name}`);
+    tex.append(...members.map(([s, i]) => fileButton(i, shownName(s.name))));
+    const row = Object.assign(document.createElement("div"), { className: "file-field archive" });
+    row.append(head, tex);
+    if (archive.others) {
+      row.append(Object.assign(document.createElement("p"), { className: "file-note", textContent: othersStay(archive.others) }));
+    }
+    rows.push(row);
   });
-  $("#files").replaceChildren(...chips);
+  list.replaceChildren(...rows);
+  list.hidden = !rows.length;
+  for (const el of $$(".file-members", list)) el.scrollTop = scrolled.get(el.dataset.archive) || 0;
+  if (focused) $(".file-open[aria-current=true]", list)?.focus({ preventScroll: true });
+  $("#files-sum").textContent = state.sources.length > 1 ? plural(state.sources.length, ".tex file") : "";
+}
+
+// On narrow screens, the panel over the panes closes to show the file
+function showFile(idx) {
+  setActive(idx);
+  if (narrow.matches && sidebar.open) showSettings(false);
 }
 
 // Choose the shown file, e.g., one of the files of a zip file
@@ -613,36 +623,6 @@ document.addEventListener("paste", async (event) => {
 if (/Mac|iPhone|iPad/.test(navigator.platform)) {
   $$(".paste-key").forEach((key) => { key.textContent = "⌘V"; });
 }
-
-/* Menu to add another file */
-
-const addButton = $("#add-button");
-const addMenu = $("#add-menu");
-
-function setAddMenu(open) {
-  addMenu.hidden = !open;
-  addButton.setAttribute("aria-expanded", String(open));
-  if (open) $("button", addMenu).focus();
-}
-
-addButton.addEventListener("click", () => setAddMenu(addMenu.hidden));
-document.addEventListener("click", (event) => {
-  if (!addMenu.hidden && !event.target.closest("#add-wrap")) setAddMenu(false);
-});
-addMenu.addEventListener("click", (event) => {
-  if (event.target.closest("[data-pick], [data-paste]")) setAddMenu(false);
-});
-addMenu.addEventListener("keydown", (event) => {
-  const items = $$("[role=menuitem]", addMenu);
-  const idx = items.indexOf(document.activeElement);
-  if (event.key === "Escape") {
-    setAddMenu(false);
-    addButton.focus();
-  } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-    event.preventDefault();
-    items[(idx + (event.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
-  }
-});
 
 /* Drag and drop */
 
@@ -786,7 +766,6 @@ function render() {
   zip.title = archives
     ? `Download ${packName()} with the comments removed from its .tex files, and the other files as they are (Ctrl+S)`
     : "Download the results of all files in a .zip file";
-  if (source && source.archive != null) archiveOf(source).shown = source.name;
   // Files can be excluded, when there are several, e.g., in a zip file
   $("#exclude-label").hidden = !source || (state.sources.length < 2 && source.archive == null);
   $("#exclude").checked = Boolean(source && source.excluded);

@@ -15,26 +15,6 @@
       <img src="favicon.svg" alt="" width="28" height="28">
       <span><span class="tex" aria-label="TeX">T<span class="tex-e">e</span>X</span> Tools <em class="tagline">in your browser</em></span>
     </div>
-    <div class="sources">
-      <div class="files" id="files" aria-label="Opened files"></div>
-      <div class="add-wrap" id="add-wrap">
-        <button class="chip add" id="add-button" aria-haspopup="menu" aria-expanded="false" aria-controls="add-menu" title="Add another file">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-          Add
-        </button>
-        <div class="menu" id="add-menu" role="menu" hidden>
-          <button role="menuitem" data-pick>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg>
-            <span><strong>Upload .tex, .zip, or .tar.gz</strong><small>E.g., your project from Overleaf, or its source from arXiv</small></span>
-          </button>
-          <button role="menuitem" data-paste>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/></svg>
-            <span><strong>Paste LaTeX</strong><small>Add it as another file</small></span>
-          </button>
-          <p class="menu-hint">You can also drop files on the page or paste with <kbd class="paste-key">Ctrl+V</kbd>.</p>
-        </div>
-      </div>
-    </div>
     <div class="view-controls">
       <div class="segmented views" id="views" role="radiogroup" aria-label="View">
         <label title="The original, with what is removed">
@@ -75,21 +55,33 @@
 
   <div class="layout">
     <div class="rail" id="rail">
-      <button class="rail-button" id="sidebar-show" aria-controls="sidebar" aria-expanded="false" title="Show the settings">
+      <button class="rail-button" id="sidebar-show" aria-controls="sidebar" aria-expanded="false" title="Show the files and settings">
         <span class="rail-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/></svg></span>
-        <span class="rail-label">Settings</span>
+        <span class="rail-label">Files and settings</span>
       </button>
     </div>
 
-    <aside class="sidebar" id="sidebar" aria-label="Settings">
-      <div class="sidebar-head">
-        <h2>Settings</h2>
-        <button class="btn ghost icon-btn" id="sidebar-hide" aria-label="Hide the settings" title="Hide the settings">
+    <aside class="sidebar" id="sidebar" aria-label="Files and settings">
+      <div class="sidebar-head" title="Hide the files and settings">
+        <h2>Files and settings</h2>
+        <button class="btn ghost icon-btn" id="sidebar-hide" aria-label="Hide the files and settings" title="Hide the files and settings">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg>
         </button>
       </div>
 
       <div class="sidebar-body" id="options">
+        <div class="files-area">
+          <section class="sec" aria-labelledby="sec-files">
+            <div class="sec-head"><h3 id="sec-files">Files</h3><span class="sum" id="files-sum"></span></div>
+            <div class="file-list" id="files" aria-label="Opened files" hidden></div>
+            <div class="file-row wide">
+              <button class="btn small primary" data-pick title="Upload .tex files, or a .zip or .tar.gz of your project, e.g., from Overleaf or arXiv"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg>Upload</button>
+              <button class="btn small" data-paste title="Paste LaTeX, which is added as another file"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/></svg>Paste</button>
+            </div>
+            <p class="hint"><code>.tex</code>, <code>.zip</code>, or <code>.tar.gz</code>, or drop them anywhere, or press <kbd class="paste-key">Ctrl+V</kbd></p>
+          </section>
+        </div>
+
         <section class="sec" aria-labelledby="sec-comments">
           <div class="sec-head"><h3 id="sec-comments">Remove comments</h3><span class="sum">the PDF stays the same</span></div>
           <div class="opt">
@@ -201,6 +193,8 @@
       <span aria-hidden="true">·</span>
       <a class="credit-link" href="https://ostpopcorn.github.io/bibtex-tools/" target="_blank" rel="noopener" title="Clean up bib files in your browser"><svg viewBox="6 6 20 20" aria-hidden="true"><path d="M12.5 8.5c-2 0-2.5 1-2.5 3v1.8c0 1.3-.7 2.2-2 2.7 1.3.5 2 1.4 2 2.7v1.8c0 2 .5 3 2.5 3"/><path d="M19.5 8.5c2 0 2.5 1 2.5 3v1.8c0 1.3.7 2.2 2 2.7-1.3.5-2 1.4-2 2.7v1.8c0 2-.5 3-2.5 3"/></svg><span>BibTeX Tools</span></a>
       <span aria-hidden="true">·</span>
+      <a class="credit-link" href="https://ostpopcorn.github.io/pdf-splitter/" target="_blank" rel="noopener" title="Split tall pages onto A4 with an overlap in your browser"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="1.5"/><path d="M3 10h2"/><path d="M19 10h2"/><path d="M3 14h2"/><path d="M19 14h2"/></svg><span>PDF Splitter</span></a>
+      <span aria-hidden="true">·</span>
       <button class="credit-link" id="about-open"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7h.01"/></svg><span>About</span></button>
     </div>
     <div class="status-right"><span class="dot" id="engine-dot"></span><span id="engine-state">Loading Python…</span></div>
@@ -222,6 +216,10 @@
         <a class="about-link" href="https://ostpopcorn.github.io/bibtex-tools/" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg>
           <span><strong>BibTeX Tools</strong><small>Clean up the bib file of your paper in your browser</small></span>
+        </a>
+        <a class="about-link" href="https://ostpopcorn.github.io/pdf-splitter/" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="1.5"/><path d="M3 10h2"/><path d="M19 10h2"/><path d="M3 14h2"/><path d="M19 14h2"/></svg>
+          <span><strong>PDF Splitter</strong><small>Split tall pages, e.g., notes from a reMarkable, onto A4 in your browser</small></span>
         </a>
       </div>
       <p class="about-small">TeX Tools is free software under the <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener">GNU General Public License v3</a>. It runs Python in your browser with <a href="https://pyodide.org" target="_blank" rel="noopener">Pyodide</a> (MPL-2.0), which includes the Python standard library (PSF License).</p>

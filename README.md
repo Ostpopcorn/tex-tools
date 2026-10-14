@@ -10,8 +10,9 @@ files never leave your computer.
 
 ![Screenshot of the web app](web/screenshot.png)
 
-* The settings are in a sidebar on the left, each with an example.  Hide
-  them to a bar on the left to make room for the panes.
+* The files and the settings are in a panel on the left: the open files at
+  the top, and the settings below them, each with an example.  Hide the
+  panel to a bar on the left to make room for the panes.
 * Removed lines are marked red, and the removed end of a changed line is
   struck through.  Text that is kept on purpose, e.g., a `%` in a `verbatim`
   environment, is marked purple.
@@ -26,7 +27,7 @@ files never leave your computer.
   of a paper with a single file on arXiv is a gzipped `.tex` file, which is
   opened like a `.tex` file.
 * Several files can be open at once, e.g., all the files of a paper.  Choose
-  the shown file above the pane, and download it, or all of them as a
+  the shown file in the panel or above the pane, and download it, or all of them as a
   `.zip`.  Files keep their names, so that `\input` and `\include` still
   find them.
 * Files that are not UTF-8 are read and saved as Latin-1, and line endings
