@@ -14,8 +14,9 @@ files never leave your computer.
   the top, and the settings below them, each with an example.  Hide the
   panel to a bar on the left to make room for the panes.
 * Removed lines are marked red, and the removed end of a changed line is
-  struck through.  Text that is kept on purpose, e.g., a `%` in a `verbatim`
-  environment, is marked purple.
+  struck through.  In the result, a red triangle on the edge marks where
+  whole lines were removed, like git in VS Code.  Text that is kept on
+  purpose, e.g., a `%` in a `verbatim` environment, is marked purple.
 * Show the original, both side by side, or the result.  The fold button next
   to the views folds the unchanged lines, so that you see only what changed,
   with two lines around each change.  Click a fold to show its lines.

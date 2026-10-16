@@ -646,9 +646,9 @@ window.addEventListener("drop", async (event) => {
 
 /* Rendering */
 
-function lineHtml(number, html, cls = "", badges = "", title = "") {
+function lineHtml(number, html, cls = "", badges = "", title = "", mark = "") {
   if (badges) cls = cls ? `${cls} has-badges` : "has-badges";
-  return `<div class="l${cls ? " " + cls : ""}"${title ? ` title="${escapeHtml(title)}"` : ""}>` +
+  return `<div class="l${cls ? " " + cls : ""}"${title ? ` title="${escapeHtml(title)}"` : ""}>` + mark +
     `<span class="n">${number}</span><span class="t">${html || " "}</span>` +
     (badges ? `<span class="badges">${badges}</span>` : "") + "</div>";
 }
@@ -699,6 +699,33 @@ function renderOriginal(lines, file, folds) {
   pane.lines = lineElements(pane.el, lines.length, folds);
 }
 
+// Where whole lines were removed in the result: the removed lines of the
+// original before each line of the result, and after its last line
+function removedGaps(file) {
+  const gaps = new Map();
+  let removed = [];
+  file.lines.forEach(([out], i) => {
+    if (out === null) removed.push(i);
+    else if (removed.length) {
+      gaps.set(out, removed);
+      removed = [];
+    }
+  });
+  if (removed.length) gaps.set(file.count, removed);
+  return gaps;
+}
+
+// A triangle between two lines of the result, like git in VS Code, which
+// says which lines were removed there
+function removedMark(file, removed, end) {
+  const lines = removed.filter((i) => file.lines[i][2] === "comment line").length;
+  const blank = removed.length - lines;
+  const what = [lines && plural(lines, "comment line"), blank && plural(blank, "blank line")].filter(Boolean);
+  const [first, last] = [removed[0] + 1, removed[removed.length - 1] + 1];
+  const text = `${what.join(" and ")} removed here: ${first === last ? `line ${first}` : `lines ${first}–${last}`} of the original`;
+  return `<span class="del${end ? " end" : ""}" role="img" aria-label="${text}" title="${text}"></span>`;
+}
+
 function renderResult(original, file, folds) {
   const pane = panes.result;
   if (!file) {
@@ -711,8 +738,12 @@ function renderResult(original, file, folds) {
   file.lines.forEach(([out, keep], i) => {
     if (out !== null && keep < original[i].length) changed.add(out);
   });
-  pane.el.innerHTML = withFolds(lines.length, folds, (j) =>
-    lineHtml(j + 1, escapeHtml(lines[j]), changed.has(j) ? "chg" : ""));
+  const gaps = removedGaps(file);
+  pane.el.innerHTML = withFolds(lines.length, folds, (j) => {
+    let mark = gaps.has(j) ? removedMark(file, gaps.get(j), false) : "";
+    if (j === lines.length - 1 && gaps.has(lines.length)) mark += removedMark(file, gaps.get(lines.length), true);
+    return lineHtml(j + 1, escapeHtml(lines[j]), changed.has(j) ? "chg" : "", "", "", mark);
+  });
   pane.lines = lineElements(pane.el, lines.length, folds);
   if (!lines.length) {
     pane.el.innerHTML = `<div class="l"><span class="n"></span>` +
