@@ -23,8 +23,8 @@ def test_run():
     first, second = response["files"]
     assert first["text"] == "a\nb\n" and first["count"] == 2
     assert first["comments"] == 2
-    assert first["lines"] == [[0, 1, "comment"], [None, 0, "comment line"],
-                              [1, 1, ""]]
+    assert first["lines"] == [[0, [[1, 5]], "comment"],
+                              [None, [[0, 3]], "comment line"], [1, [], ""]]
     assert second["kept"] == [{"kind": "inline", "lines": [0, 0],
                                "name": "\\verb"}]
     assert second["messages"] == [["info", "Kept the % in 1 inline verbatim."]]
@@ -40,8 +40,41 @@ def test_run_excluded_file():
     assert excluded["text"] == text
     assert excluded["comments"] == 0 and excluded["count"] == 2
     assert excluded["kept"] == [] and excluded["messages"] == []
-    assert excluded["lines"] == [[0, 3, ""], [1, 14, ""]]
+    assert excluded["lines"] == [[0, [], ""], [1, [], ""]]
     assert cleaned["comments"] == 2
+
+
+def test_run_with_highlights_and_notes():
+    text = ("\\newcommand{\\hl}[1]{\\textcolor{orange}{#1}}\n"
+            "A \\blue{new} word. % x\n\\comment{note}\n"
+            "\\begin{comment}\nold\n\\end{comment}\n\\red{open\n")
+    response = _run({"sources": [{"name": "a.tex", "text": text}],
+                     "options": {"highlights": ["blue", "red", "\\bad", 1],
+                                 "notes": ["comment"]}})
+    result = response["files"][0]
+    assert result["text"] == ("\\newcommand{\\hl}[1]{\\textcolor{orange}{#1}}\n"
+                              "A new word.\n\\red{open\n")
+    assert result["highlights"] == 1
+    # the comment, the note, and the comment environment
+    assert result["comments"] == 3
+    assert result["lines"][1] == [1, [[2, 8], [11, 12], [18, 22]], "comment"]
+    assert [_line[2] for _line in result["lines"][2:6]] == [
+        "note", "comment environment", "comment environment",
+        "comment environment"]
+    assert result["unsure"] == [{"lines": [6, 6], "name": "\\red",
+                                 "reason": "it has no closing }"}]
+    assert response["suggestions"] == ["hl"]
+
+
+def test_run_keeps_comment_envs_of_ones_own():
+    response = _run({"sources": [
+        {"name": "a.tex", "text": "\\begin{comment}\nx\n\\end{comment}\n"},
+        {"name": "b.tex", "text": "\\newenvironment{comment}{}{}\n",
+         "exclude": True}], "options": {}})
+    result = response["files"][0]
+    assert result["text"] == "\\begin{comment}\nx\n\\end{comment}\n"
+    assert result["messages"] == [["info", "Kept the comment environments, "
+                                   "since your files define their own."]]
 
 
 def test_run_with_steps_off():

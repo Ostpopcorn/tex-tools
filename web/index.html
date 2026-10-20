@@ -116,6 +116,51 @@
               </ul>
             </div>
           </details>
+          <div class="opt">
+            <label class="check" title="The comment environment of the comment package, which LaTeX skips. It is removed if \begin{comment} and \end{comment} are on lines of their own."><input type="checkbox" data-setting="comments.envs"><span>Remove comment environments</span></label>
+            <p class="hint">E.g., <code>\begin{comment}</code> … <code>\end{comment}</code></p>
+          </div>
+          <div class="opt">
+            <label class="check" title="Notes are removed with their text, so that they are gone from the PDF too"><input type="checkbox" data-setting="comments.notes"><span>Remove notes, with their text</span></label>
+            <p class="hint">E.g., <code>text \comment{check} more</code> → <code>text more</code></p>
+            <div class="tags" data-tags="noteMacros">
+              <input class="tag-input" placeholder="Add a macro, e.g., \todo" aria-label="Add a macro that is removed with its text" autocomplete="off" spellcheck="false">
+              <button class="btn ghost tiny tags-reset" type="button" title="Reset to the default macros" hidden>Reset</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="sec" aria-labelledby="sec-highlights">
+          <div class="sec-head"><h3 id="sec-highlights">Remove highlights</h3><span class="sum">their text stays</span></div>
+          <div class="opt">
+            <label class="check"><input type="checkbox" data-setting="highlights.enabled"><span>Remove highlights, but keep their text</span></label>
+            <p class="hint">E.g., <code>\blue{new text}</code> → <code>new text</code></p>
+            <div class="tags" data-tags="highlightMacros">
+              <input class="tag-input" placeholder="Add a macro, e.g., \hl" aria-label="Add a macro whose text is kept" autocomplete="off" spellcheck="false">
+              <button class="btn ghost tiny tags-reset" type="button" title="Reset to the default macros" hidden>Reset</button>
+            </div>
+            <p class="hint suggestions" id="suggestions" hidden></p>
+          </div>
+          <div class="opt">
+            <label class="check"><input type="checkbox" data-setting="highlights.changes"><span>Accept the changes of the <code>changes</code> package</span></label>
+            <p class="hint">E.g., <code>\replaced{new}{old}</code> → <code>new</code>, <code>\added{new}</code> → <code>new</code>, and <code>\deleted{old}</code> → nothing</p>
+          </div>
+          <details class="rules">
+            <summary><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>How it plays it safe</summary>
+            <div class="rules-body">
+              <p class="rules-note">Highlights and notes are read like LaTeX reads them. What is not clear is kept as it is, with an orange mark that says why.</p>
+              <ul>
+                <li><p class="rule-change">Only <code>\blue{…}</code> with its braces</p>
+                  <p class="rule-why">Not <code>\bluebox</code>, not a <code>\blue</code> in a comment, in verbatim text, or in a URL, and not the definition of <code>\blue</code>, which stays, so that what is kept still works.</p></li>
+                <li><p class="rule-change">Braces are kept if they are needed</p>
+                  <p class="rule-why">E.g., <code>\blue{\bfseries new}</code> → <code>{\bfseries new}</code>, so that the bold text ends where it did, and <code>\LaTeX\blue{s}</code> → <code>\LaTeX{s}</code>, so that the name of the command stays.</p></li>
+                <li><p class="rule-change">No new paragraphs</p>
+                  <p class="rule-why">A line that is empty after removing a note is removed, since an empty line starts a new paragraph. The words around a note keep their space, or stay together with a <code>%</code>.</p></li>
+                <li><p class="rule-change">Kept as is</p>
+                  <p class="rule-why">E.g., a highlight without a closing <code>}</code>, with an optional argument <code>[…]</code>, or with <code>\verb</code> in it.</p></li>
+              </ul>
+            </div>
+          </details>
         </section>
 
         <section class="sec" aria-labelledby="sec-keep">

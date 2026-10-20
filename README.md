@@ -14,7 +14,7 @@ files never leave your computer.
   the top, and the settings below them, each with an example.  _Close all_
   closes all files.  Hide the panel to a bar on the left to make room for
   the panes.
-* Removed lines are marked red, and the removed end of a changed line is
+* Removed lines are marked red, and the removed parts of a changed line are
   struck through.  In the result, a red triangle on the edge marks where
   whole lines were removed, like git in VS Code.  Text that is kept on
   purpose, e.g., a `%` in a `verbatim` environment, is marked purple.
@@ -89,6 +89,48 @@ result = remove_comments(text)
 print(result.text)
 # only steps 1 and 2
 result = remove_comments(text, Options(blank_lines=False, space_before=False))
+```
+
+Two more settings remove what LaTeX skips or what is only for you:
+* Comment environments of the `comment` package, `\begin{comment}` …
+  `\end{comment}`, on lines of their own (on by default).  They are kept if
+  your files define their own `comment` environment, which may show its
+  text.
+* Notes with their text, e.g., `text \comment{check this} more` → `text more`
+  (off by default).  You choose the macros, e.g., `\comment` and `\todo`.
+
+## Remove Highlights
+Removes the highlights of changes, but keeps their text, e.g.,
+`\blue{new text}` → `new text` (off by default).  You choose the macros,
+e.g., `\blue` and `\red`, and the web app suggests the macros that your
+files define to color their text, e.g.,
+`\newcommand{\hl}[1]{\textcolor{orange}{#1}}`.  It can also accept the
+changes of the `changes` package: `\added{new}` → `new`, `\deleted{old}` →
+nothing, and `\replaced{new}{old}` → `new`.
+
+Highlights and notes are read like LaTeX reads them, and it plays it safe:
+* Only `\blue{…}` with its braces is a highlight: not `\bluebox`, not a
+  `\blue` in a comment, in verbatim text, or in a URL, and not the definition
+  of `\blue`, which stays, so that the highlights that are kept still work.
+* The braces stay if they are needed, e.g., `\blue{\bfseries new}` →
+  `{\bfseries new}`, so that the bold text ends where it did, and
+  `\LaTeX\blue{s}` → `\LaTeX{s}`, so that the name of the command stays.
+* No new paragraphs: a line that is empty after removing a note is removed.
+  The words around a note keep their space, or stay together with a `%`,
+  e.g., `word\comment{a⏎b}s` → `word%⏎s`.  Lines are never joined.
+* What is not clear is kept as it is, with a warning that says why, e.g., a
+  highlight without a closing `}`, with an optional argument `[…]`, or with
+  `\verb` in it.
+
+In Python, `clean` removes highlights and notes, and then comments:
+```python
+from textools import MacroOptions, Options, clean
+
+result = clean(text, Options(), MacroOptions(highlights=("blue", "red"),
+                                             notes=("comment",)))
+print(result.text)
+for unsure in result.unsure:
+    print(unsure.lines, unsure.name, unsure.reason)
 ```
 
 ## Tests

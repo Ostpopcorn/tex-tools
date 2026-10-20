@@ -11,7 +11,9 @@ import time
 import zipfile
 from dataclasses import asdict, fields
 
-from .comments import Options, remove_comments
+from .clean import clean
+from .comments import Options
+from .macros import MacroOptions, defines_comment_env, find_highlights
 
 _OPTIONS = {_field.name for _field in fields(Options)}
 # For the files that are excluded, which stay as they are
@@ -38,28 +40,61 @@ def _options(request):
                       if _key in _OPTIONS})
 
 
+def _names(values):
+    """The names of macros, e.g., "blue" for \\blue, without the others."""
+    return tuple(_name for _name in values if isinstance(_name, str)
+                 and re.fullmatch("[A-Za-z]+", _name))
+
+
+def _macro_options(request, sources):
+    options = request.get("options", {})
+    return MacroOptions(
+        comment_envs=bool(options.get("comment_envs", True)),
+        notes=_names(options.get("notes", [])),
+        highlights=_names(options.get("highlights", [])),
+        changes=bool(options.get("changes", False)),
+        # a comment environment that is defined in any of the files
+        own_comment_env=any(defines_comment_env(_source["text"])
+                            for _source in sources))
+
+
 def run(request_json):
-    """Remove the comments of the files of a request of the web app, see
-    `web/app.js`. The files with "exclude" stay as they are."""
+    """Clean the files of a request of the web app, see `web/app.js`. The
+    files with "exclude" stay as they are. The suggestions are the macros
+    that color their text, which are defined in the files."""
     request = json.loads(request_json)
+    sources = request["sources"]
     options = _options(request)
+    macros = _macro_options(request, sources)
     files = []
-    for _source in request["sources"]:
-        result = remove_comments(_source["text"], _UNCHANGED
-                                 if _source.get("exclude") else options)
+    for _source in sources:
+        if _source.get("exclude"):
+            result = clean(_source["text"], _UNCHANGED,
+                           MacroOptions(comment_envs=False))
+        else:
+            result = clean(_source["text"], options, macros)
         files.append({
             "text": result.text,
             "count": result.count,
             "comments": result.comments,
+            "highlights": result.highlights,
             # for each line of the input: its line in the output (or None),
-            # the number of characters kept, and why it was changed
-            "lines": [[_line.out, _line.kept, _line.reason]
-                      for _line in result.lines],
+            # the removed parts as [start, end] columns, and why it was
+            # changed
+            "lines": [[_line.out, [list(_cut) for _cut in _line.cuts],
+                       _line.reason] for _line in result.lines],
             "kept": [{"kind": _kept.kind, "lines": list(_kept.lines),
                       "name": _kept.name} for _kept in result.kept],
+            "unsure": [{"lines": list(_unsure.lines), "name": _unsure.name,
+                        "reason": _unsure.reason}
+                       for _unsure in result.unsure],
             "messages": result.messages,
         })
-    return json.dumps({"files": files})
+    suggestions = []
+    for _source in sources:
+        suggestions += [_name for _name in find_highlights(_source["text"])
+                        if _name not in suggestions]
+    return json.dumps({"files": files, "suggestions": suggestions})
 
 
 def _bytes(data):

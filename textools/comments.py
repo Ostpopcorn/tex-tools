@@ -111,9 +111,10 @@ class Result:
     messages: List[Tuple[str, str]] = field(default_factory=list)
 
 
-def _scan(body, options):
+def _scan(body, options, numbers=None):
     """Return the column of the comment in each line, the lines that are
-    kept as they are, the kept text with a %, and warnings."""
+    kept as they are, the kept text with a %, and warnings, with the
+    numbers of the lines in `numbers` (by default, from 1)."""
     starts = [0] + [_m.end() for _m in re.finditer("\n", body)]
     line_of = lambda idx: bisect.bisect_right(starts, idx) - 1
     comments = {}
@@ -135,9 +136,10 @@ def _scan(body, options):
         if kind == "verbatim":
             name = match.group("env")
             if match.group("unclosed") is not None:
+                number = numbers[first] if numbers else first + 1
                 messages.append(("warning", "\\begin{{{0}}} in line {1} has no "
                                  "\\end{{{0}}}, so the rest of the file is kept "
-                                 "as it is.".format(name, first + 1)))
+                                 "as it is.".format(name, number)))
         elif kind == "magic":
             name = "% !" + match.group().split("!", 1)[1][:3]
         else:
@@ -151,14 +153,16 @@ def _blank(line):
     return not line.strip(" \t")
 
 
-def remove_comments(text, options=Options()):
-    """Remove the comments of a LaTeX file, see the steps in `Options`."""
+def remove_comments(text, options=Options(), numbers=None):
+    """Remove the comments of a LaTeX file, see the steps in `Options`.
+    Warnings name the lines by their numbers in `numbers`, e.g., in the
+    file that the text was made from, or else from 1."""
     eol = "\r\n" if "\r\n" in text else "\n"
     body = text.replace("\r\n", "\n")
     final_newline = body.endswith("\n")
     if final_newline:
         body = body[:-1]
-    comments, fixed, kept, messages = _scan(body, options)
+    comments, fixed, kept, messages = _scan(body, options, numbers)
 
     out = []
     lines = []

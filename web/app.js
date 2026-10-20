@@ -18,9 +18,18 @@ const ARCHIVE_FILE = /\.(zip|tar|tgz|gz)$/i;
 const ARCHIVE_TYPES = { zip: "application/zip", tar: "application/x-tar", "tar.gz": "application/gzip" };
 
 const DEFAULT_SETTINGS = {
-  comments: { empty: true, lines: true, blank: true, space: true },
+  comments: { empty: true, lines: true, blank: true, space: true, envs: true, notes: false },
+  highlights: { enabled: false, changes: false },
   keep: { verbatim: true, magic: true },
+  // The names of the macros that are removed with their text, and of those
+  // whose text is kept
+  noteMacros: ["comment"],
+  highlightMacros: ["blue", "red"],
 };
+// The name of a macro, e.g., "blue" for \blue
+const MACRO_NAME = /^[A-Za-z]+$/;
+// The macros of the changes package, see CHANGES in textools/macros.py
+const CHANGES = ["added", "highlight", "deleted", "replaced"];
 // The original, both side by side, or the result
 const VIEWS = ["original", "both", "result"];
 const DEFAULT_VIEW = "both";
@@ -75,7 +84,9 @@ function merge(base, extra) {
   if (!extra || typeof extra !== "object") return result;
   for (const [key, value] of Object.entries(extra)) {
     if (!(key in result)) continue;
-    if (result[key] && typeof result[key] === "object") result[key] = merge(result[key], value);
+    if (Array.isArray(result[key])) {
+      if (Array.isArray(value)) result[key] = [...new Set(value.filter((name) => MACRO_NAME.test(name)))];
+    } else if (result[key] && typeof result[key] === "object") result[key] = merge(result[key], value);
     else if (typeof value === typeof result[key]) result[key] = value;
   }
   return result;
@@ -183,7 +194,7 @@ function setBusy(busy) {
 }
 
 function buildRequest() {
-  const { comments, keep } = state.settings;
+  const { comments, highlights, keep, noteMacros, highlightMacros } = state.settings;
   return {
     sources: state.sources.map(({ name, text, excluded }) => ({ name, text, exclude: Boolean(excluded) })),
     options: {
@@ -193,6 +204,10 @@ function buildRequest() {
       space_before: comments.space,
       keep_verbatim: keep.verbatim,
       keep_magic: keep.magic,
+      comment_envs: comments.envs,
+      notes: comments.notes ? noteMacros : [],
+      highlights: highlights.enabled ? highlightMacros : [],
+      changes: highlights.changes,
     },
   };
 }
@@ -234,6 +249,94 @@ $("#options").addEventListener("change", (event) => {
   saveSettings();
   schedule();
 });
+
+/* The lists of macros: the notes, and the highlights */
+
+const otherList = (list) => (list === "noteMacros" ? "highlightMacros" : "noteMacros");
+const sameList = (a, b) => a.length === b.length && a.every((name, i) => name === b[i]);
+
+function renderTags() {
+  for (const container of $$(".tags[data-tags]")) {
+    const list = container.dataset.tags;
+    const input = $(".tag-input", container);
+    $$(".tag", container).forEach((tag) => tag.remove());
+    for (const name of state.settings[list]) {
+      const tag = Object.assign(document.createElement("span"), { className: "tag" });
+      tag.append(`\\${name}`, Object.assign(document.createElement("button"), {
+        type: "button", textContent: "×", title: `Remove \\${name} from the list`,
+        onclick: () => setMacros(list, state.settings[list].filter((other) => other !== name)),
+      }));
+      container.insertBefore(tag, input);
+    }
+    $(".tags-reset", container).hidden = sameList(state.settings[list], DEFAULT_SETTINGS[list]);
+  }
+  renderSuggestions();
+}
+
+function setMacros(list, names) {
+  state.settings[list] = names;
+  saveSettings();
+  renderTags();
+  schedule();
+}
+
+// Add macros to a list, e.g., "\\todo, \\note". A macro of the other list
+// moves to this one.
+function addMacros(list, value) {
+  const names = value.split(/[\s,;]+/).map((name) => name.replace(/^\\/, "")).filter(Boolean);
+  const bad = names.filter((name) => !MACRO_NAME.test(name));
+  if (bad.length) {
+    toast(`${bad.map((name) => "\\" + name).join(", ")} ${bad.length === 1
+      ? "is not the name of a macro, which has" : "are not names of macros, which have"} only letters`);
+  }
+  const added = [...new Set(names.filter((name) => MACRO_NAME.test(name) && !state.settings[list].includes(name)))];
+  if (!added.length) return;
+  const other = otherList(list);
+  state.settings[other] = state.settings[other].filter((name) => !added.includes(name));
+  setMacros(list, [...state.settings[list], ...added]);
+}
+
+for (const container of $$(".tags[data-tags]")) {
+  const list = container.dataset.tags;
+  const input = $(".tag-input", container);
+  input.addEventListener("keydown", (event) => {
+    if ((event.key === "Enter" || event.key === ",") && input.value.trim()) {
+      event.preventDefault();
+      addMacros(list, input.value);
+      input.value = "";
+    } else if (event.key === "Backspace" && !input.value && state.settings[list].length) {
+      setMacros(list, state.settings[list].slice(0, -1));
+    }
+  });
+  input.addEventListener("change", () => {
+    if (!input.value.trim()) return;
+    addMacros(list, input.value);
+    input.value = "";
+  });
+  container.addEventListener("click", (event) => {
+    if (event.target === container) input.focus();
+  });
+  $(".tags-reset", container).addEventListener("click", () => {
+    const names = [...DEFAULT_SETTINGS[list]];
+    state.settings[otherList(list)] = state.settings[otherList(list)].filter((name) => !names.includes(name));
+    setMacros(list, names);
+  });
+}
+
+// The macros that color their text, which are defined in the files, but
+// are in no list
+function renderSuggestions() {
+  const el = $("#suggestions");
+  const known = new Set([...state.settings.highlightMacros, ...state.settings.noteMacros, ...CHANGES]);
+  const names = ((state.response && state.response.suggestions) || []).filter((name) => !known.has(name));
+  el.hidden = !names.length;
+  el.replaceChildren(...(names.length ? ["Found in your files:", ...names.map((name) =>
+    Object.assign(document.createElement("button"), {
+      className: "suggestion", type: "button", textContent: `+ \\${name}`,
+      title: `Add \\${name}, which colors its text, to the highlights`,
+      onclick: () => addMacros("highlightMacros", name),
+    }))] : []));
+}
 
 /* Sidebar with the settings, like in BibTeX Tools */
 
@@ -462,6 +565,11 @@ const FILE_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a
 
 const ZIP_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>`;
 
+// The removed comments and highlights of a file, e.g., "3 comments · 1 highlight"
+function removedCount({ comments, highlights }) {
+  return plural(comments, "comment") + (highlights ? ` · ${plural(highlights, "highlight")}` : "");
+}
+
 // The open files at the top of the panel: each file, and each archive with
 // its .tex files, with the number of removed comments. Clicking a file shows
 // it in the panes.
@@ -483,7 +591,7 @@ function renderFiles() {
     button.setAttribute("aria-current", String(idx === state.active));
     button.innerHTML = icon;
     button.append(span("file-name", name), source.excluded ? span("file-count excluded", "excluded")
-      : span("file-count", files ? plural(files[idx].comments, "comment") : ""));
+      : span("file-count", files ? removedCount(files[idx]) : ""));
     return button;
   };
   const closeButton = (name, keep) => Object.assign(document.createElement("button"), {
@@ -502,10 +610,13 @@ function renderFiles() {
     const archive = archiveOf(source);
     if (state.sources.findIndex((s) => s.archive === archive.id) !== idx) return;
     const members = state.sources.map((s, i) => [s, i]).filter(([s]) => s.archive === archive.id);
-    const comments = files ? members.reduce((sum, [, i]) => sum + files[i].comments, 0) : null;
+    const comments = files ? removedCount({
+      comments: members.reduce((sum, [, i]) => sum + files[i].comments, 0),
+      highlights: members.reduce((sum, [, i]) => sum + files[i].highlights, 0),
+    }) : null;
     const head = Object.assign(document.createElement("div"), { className: "file-head", title: archive.name });
     head.innerHTML = ZIP_ICON;
-    head.append(span("file-name", archive.name), span("file-count", comments === null ? "" : plural(comments, "comment")),
+    head.append(span("file-name", archive.name), span("file-count", comments === null ? "" : comments),
       closeButton(archive.name, (s) => s.archive !== archive.id));
     const tex = Object.assign(document.createElement("div"), { className: "file-members" });
     tex.dataset.archive = String(archive.id);
@@ -561,7 +672,7 @@ function renderFileSelect() {
       parent = groups.get(source.archive);
     }
     const comments = source.excluded ? " · excluded"
-      : files ? ` · ${plural(files[idx].comments, "comment")}` : "";
+      : files ? ` · ${removedCount(files[idx])}` : "";
     parent.append(new Option(shownName(source.name) + comments, String(idx)));
   });
   select.value = String(state.active);
@@ -674,7 +785,34 @@ const REASONS = {
   "comment": "The comment is removed",
   "comment line": "A line with only a comment",
   "blank line": "An extra blank line",
+  "highlight": "A highlight is removed, and its text is kept",
+  "note": "A note is removed with its text",
+  "deleted": "Deleted text of the changes package is removed",
+  "comment environment": "A comment environment is removed",
 };
+// The removed lines, by why they were removed, for the marks in the result
+const REMOVED_LINES = {
+  "comment line": ["comment line", "comment lines"],
+  "blank line": ["blank line", "blank lines"],
+  "note": ["line of a note", "lines of a note"],
+  "comment environment": ["line of a comment environment", "lines of a comment environment"],
+  "deleted": ["line of deleted text", "lines of deleted text"],
+  "highlight": ["empty line of a highlight", "empty lines of highlights"],
+};
+
+// Whether a line of the original is changed, but not removed
+const changedLine = ([out, cuts]) => out !== null && cuts.length > 0;
+
+// A line of the original with its removed parts struck through
+function cutHtml(text, cuts) {
+  let html = "";
+  let pos = 0;
+  for (const [start, end] of cuts) {
+    html += escapeHtml(text.slice(pos, start)) + `<span class="cut">${escapeHtml(text.slice(start, end))}</span>`;
+    pos = end;
+  }
+  return html + escapeHtml(text.slice(pos));
+}
 
 // The lines of the kept text with a %, and the badges on their first lines
 function keptLines(file) {
@@ -685,6 +823,11 @@ function keptLines(file) {
     const badge = `<span class="badge kept" title="The % in it is not a comment">${escapeHtml(KEPT_LABELS[kind](name))}</span>`;
     badges.set(first, (badges.get(first) || "") + badge);
   }
+  // The highlights and notes that are kept, since they are not clear
+  for (const { lines: [first], name, reason } of (file ? file.unsure : [])) {
+    const badge = `<span class="badge warn" title="Kept as it is: ${escapeHtml(reason)}">kept · ${escapeHtml(name)}</span>`;
+    badges.set(first, (badges.get(first) || "") + badge);
+  }
   return { lines, badges };
 }
 
@@ -693,15 +836,15 @@ function renderOriginal(lines, file, folds) {
   const pane = panes.original;
   pane.el.innerHTML = withFolds(lines.length, folds, (i) => {
     const text = lines[i];
-    const [out, keep, reason] = (file && file.lines[i]) || [i, text.length, ""];
+    const [out, cuts, reason] = (file && file.lines[i]) || [i, [], ""];
     let cls = kept.lines.has(i) ? "kept" : "";
     let html;
     if (out === null) {
       cls = "rm";
       html = escapeHtml(text);
-    } else if (keep < text.length) {
+    } else if (cuts.length) {
       cls = "chg";
-      html = escapeHtml(text.slice(0, keep)) + `<span class="cut">${escapeHtml(text.slice(keep))}</span>`;
+      html = cutHtml(text, cuts);
     } else {
       html = escapeHtml(text);
     }
@@ -729,9 +872,13 @@ function removedGaps(file) {
 // A triangle between two lines of the result, like git in VS Code, which
 // says which lines were removed there
 function removedMark(file, removed, end) {
-  const lines = removed.filter((i) => file.lines[i][2] === "comment line").length;
-  const blank = removed.length - lines;
-  const what = [lines && plural(lines, "comment line"), blank && plural(blank, "blank line")].filter(Boolean);
+  const counts = new Map();
+  for (const i of removed) {
+    const reason = REMOVED_LINES[file.lines[i][2]] ? file.lines[i][2] : "blank line";
+    counts.set(reason, (counts.get(reason) || 0) + 1);
+  }
+  const what = [...counts].map(([reason, count]) => plural(count, ...REMOVED_LINES[reason]));
+  if (what.length > 2) what.splice(0, what.length - 1, what.slice(0, -1).join(", "));
   const [first, last] = [removed[0] + 1, removed[removed.length - 1] + 1];
   const text = `${what.join(" and ")} removed here: ${first === last ? `line ${first}` : `lines ${first}–${last}`} of the original`;
   return `<span class="del${end ? " end" : ""}" role="img" aria-label="${text}" title="${text}"></span>`;
@@ -746,8 +893,8 @@ function renderResult(original, file, folds) {
   }
   const lines = file.count ? splitLines(file.text) : [];
   const changed = new Set();
-  file.lines.forEach(([out, keep], i) => {
-    if (out !== null && keep < original[i].length) changed.add(out);
+  file.lines.forEach((line) => {
+    if (changedLine(line)) changed.add(line[0]);
   });
   const gaps = removedGaps(file);
   pane.el.innerHTML = withFolds(lines.length, folds, (j) => {
@@ -813,6 +960,7 @@ function render() {
   $("#exclude").checked = Boolean(source && source.excluded);
   renderFiles();
   renderFileSelect();
+  renderSuggestions();
   renderMeta(source, lines, file);
   renderStatus();
 }
@@ -833,7 +981,7 @@ function renderMeta(source, lines, file) {
     return;
   }
   const removed = lines.length - file.count;
-  const changed = file.lines.filter(([out, keep], i) => out !== null && keep < lines[i].length).length;
+  const changed = file.lines.filter(changedLine).length;
   const smaller = source.text.length ? Math.round(100 * (1 - file.text.length / source.text.length)) : 0;
   $("#result-meta").textContent = [
     plural(file.count, "line"),
@@ -857,9 +1005,11 @@ function renderStatus() {
     counts.textContent = "";
   } else {
     const comments = r.files.reduce((sum, file) => sum + file.comments, 0);
+    const highlights = r.files.reduce((sum, file) => sum + file.highlights, 0);
     const linesIn = r.files.reduce((sum, file) => sum + file.lines.length, 0);
     const linesOut = r.files.reduce((sum, file) => sum + file.count, 0);
     counts.innerHTML = `<strong>${comments}</strong> ${comments === 1 ? "comment" : "comments"} removed · ` +
+      (highlights ? `<strong>${highlights}</strong> ${highlights === 1 ? "highlight" : "highlights"} removed · ` : "") +
       `<strong>${linesIn}</strong> → <strong>${linesOut}</strong> lines` +
       (r.files.length > 1 ? ` in ${r.files.length} files` : "");
     const excluded = state.sources.filter((source) => source.excluded).length;
@@ -903,9 +1053,11 @@ function foldsOf(source, lines, file) {
   if (!state.fold || !source || !file) return folds;
   const shown = new Uint8Array(lines.length);
   const show = (i) => shown.fill(1, Math.max(0, i - FOLD_CONTEXT), i + FOLD_CONTEXT + 1);
-  file.lines.forEach(([out, keep], i) => {
-    if (out === null || keep < lines[i].length) show(i);
+  file.lines.forEach(([out, cuts], i) => {
+    if (out === null || cuts.length) show(i);
   });
+  // The highlights and notes that are kept, since they are not clear
+  for (const { lines: [first] } of file.unsure) show(first);
   for (const { lines: [first, last] } of file.kept) {
     show(first);
     for (let i = first + 1; i <= last; i++) if (lines[i].includes("%")) show(i);
@@ -1289,4 +1441,5 @@ $("#theme").addEventListener("click", () => {
 
 try { applyTheme(localStorage.getItem(THEME_KEY)); } catch { /* private mode */ }
 applySettingsToUI();
+renderTags();
 render();
