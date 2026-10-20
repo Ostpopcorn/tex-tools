@@ -153,6 +153,24 @@ def test_comment_envs_of_ones_own():
                                 "since your files define their own.")]
 
 
+@pytest.mark.parametrize("text, expected", [
+    ("a \\blue{new} b", "a new b"),
+    ("\\blue{\\bfseries new} b", "\\bfseries new b"),
+    ("\\blue{\\color{red} new} b", "\\color{red} new b"),
+    ("\\replaced{\\bfseries x}{y}z", "\\bfseries xz"),
+    # a command name does not run into the text after it
+    ("\\LaTeX\\blue{s} x", "\\LaTeX{}s x"),
+    ("\\blue{\\LaTeX} is", "\\LaTeX{} is"),
+    ("\\LaTeX\\blue{\\red{s}}", "\\LaTeX{}s"),
+    ("\\blue{\\red{\\LaTeX}}s", "\\LaTeX{}s"),
+    ("\\replaced{\\LaTeX}{old}s", "\\LaTeX{}s"),
+])
+def test_aggressive_removes_the_braces(text, expected):
+    options = MacroOptions(highlights=("blue", "red"), changes=True,
+                           aggressive=True)
+    assert _clean(text, options) == expected
+
+
 def test_highlighted_lines():
     text = "a\n\\blue{x\ny\nz} \\red{w}\n\\replaced{n\new}{old\nlines}\n"
     result = remove_macros(text, ALL)

@@ -86,6 +86,11 @@ class MacroOptions:
     highlights: Tuple[str, ...] = ()
     #: Accept the changes of the changes package, see `CHANGES`
     changes: bool = False
+    #: Always remove the braces of highlights, also when they keep a
+    #: declaration in, e.g., \blue{\bfseries new} → \bfseries new. A {} is
+    #: added where a command name would run into the text after it, e.g.,
+    #: \LaTeX\blue{s} → \LaTeX{}s.
+    aggressive: bool = False
     #: The files define their own comment environment, see
     #: `defines_comment_env`, so that the comment environments are kept
     own_comment_env: bool = False
@@ -455,16 +460,29 @@ def remove_macros(text, options=MacroOptions()):
         result.highlighted.append((line, lines.line_of(end - 1)))
         content = (arg + 1, end - 1)
         follow = old_end if action == "replace" else end
-        if _needs_braces(body, start, content, follow):
+        if not options.aggressive and _needs_braces(body, start, content,
+                                                    follow):
             lines.cut_span(start, arg, "highlight")
             if action == "replace":
                 lines.drop(end, old_end, "deleted")
         else:
             lines.cut_span(start, arg + 1, "highlight")
+            if options.aggressive and _CONTROL_WORD_END.search(
+                    body[max(0, start - 100):start]):
+                # e.g., \LaTeX\blue{s} → \LaTeX{}s
+                lines.insert(line, start - lines.starts[line], "{}",
+                             "highlight")
             if action == "replace":
+                # the end of the new text gets a {} like a note, if needed
                 lines.drop(end - 1, old_end, "deleted")
             else:
                 lines.cut_span(end - 1, end, "highlight")
+                if options.aggressive and _CONTROL_WORD_END.search(
+                        body[max(arg + 1, end - 101):end - 1]):
+                    # e.g., \blue{\LaTeX} is → \LaTeX{} is
+                    close = lines.line_of(end - 1)
+                    lines.insert(close, end - 1 - lines.starts[close], "{}",
+                                 "highlight")
         if action == "replace":
             bisect.insort(dropped, (end, old_end))
         # The highlights in the text of this one

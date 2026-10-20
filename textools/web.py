@@ -53,6 +53,7 @@ def _macro_options(request, sources):
         notes=_names(options.get("notes", [])),
         highlights=_names(options.get("highlights", [])),
         changes=bool(options.get("changes", False)),
+        aggressive=bool(options.get("aggressive", False)),
         # a comment environment that is defined in any of the files
         own_comment_env=any(defines_comment_env(_source["text"])
                             for _source in sources))

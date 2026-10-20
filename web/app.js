@@ -19,7 +19,7 @@ const ARCHIVE_TYPES = { zip: "application/zip", tar: "application/x-tar", "tar.g
 
 const DEFAULT_SETTINGS = {
   comments: { empty: true, lines: true, blank: true, space: true, envs: true, notes: false },
-  highlights: { enabled: false, changes: false },
+  highlights: { enabled: false, aggressive: false, changes: false },
   keep: { verbatim: true, magic: true },
   // The names of the macros that are removed with their text, and of those
   // whose text is kept
@@ -208,6 +208,7 @@ function buildRequest() {
       notes: comments.notes ? noteMacros : [],
       highlights: highlights.enabled ? highlightMacros : [],
       changes: highlights.changes,
+      aggressive: highlights.aggressive,
     },
   };
 }

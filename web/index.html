@@ -142,6 +142,10 @@
             <p class="hint suggestions" id="suggestions" hidden></p>
           </div>
           <div class="opt">
+            <label class="check" title="Removes the braces of a highlight also when they keep a declaration like \bfseries in. A {} is added where a command name would run into the text after it, e.g., \LaTeX\blue{s} → \LaTeX{}s."><input type="checkbox" data-setting="highlights.aggressive"><span>Aggressive: always remove the braces</span></label>
+            <p class="hint">E.g., <code>\blue{\bfseries new}</code> → <code>\bfseries new</code>, so the bold text goes on after it</p>
+          </div>
+          <div class="opt">
             <label class="check"><input type="checkbox" data-setting="highlights.changes"><span>Accept the changes of the <code>changes</code> package</span></label>
             <p class="hint">E.g., <code>\replaced{new}{old}</code> → <code>new</code>, <code>\added{new}</code> → <code>new</code>, and <code>\deleted{old}</code> → nothing</p>
           </div>
@@ -153,7 +157,7 @@
                 <li><p class="rule-change">Only <code>\blue{…}</code> with its braces</p>
                   <p class="rule-why">Not <code>\bluebox</code>, not a <code>\blue</code> in a comment, in verbatim text, or in a URL, and not the definition of <code>\blue</code>, which stays, so that what is kept still works.</p></li>
                 <li><p class="rule-change">Braces are kept if they are needed</p>
-                  <p class="rule-why">E.g., <code>\blue{\bfseries new}</code> → <code>{\bfseries new}</code>, so that the bold text ends where it did, and <code>\LaTeX\blue{s}</code> → <code>\LaTeX{s}</code>, so that the name of the command stays.</p></li>
+                  <p class="rule-why">E.g., <code>\blue{\bfseries new}</code> → <code>{\bfseries new}</code>, so that the bold text ends where it did, and <code>\LaTeX\blue{s}</code> → <code>\LaTeX{s}</code>, so that the name of the command stays. Aggressive removes them anyway, and adds a <code>{}</code> after a command name, e.g., <code>\LaTeX{}s</code>.</p></li>
                 <li><p class="rule-change">No new paragraphs</p>
                   <p class="rule-why">A line that is empty after removing a note is removed, since an empty line starts a new paragraph. The words around a note keep their space, or stay together with a <code>%</code>.</p></li>
                 <li><p class="rule-change">Kept as is</p>

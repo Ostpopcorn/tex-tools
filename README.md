@@ -115,6 +115,10 @@ Highlights and notes are read like LaTeX reads them, and it plays it safe:
 * The braces stay if they are needed, e.g., `\blue{\bfseries new}` →
   `{\bfseries new}`, so that the bold text ends where it did, and
   `\LaTeX\blue{s}` → `\LaTeX{s}`, so that the name of the command stays.
+  _Aggressive_ (off by default) removes them anyway, e.g.,
+  `\blue{\bfseries new}` → `\bfseries new`, so that the bold text goes on
+  after it.  Only where a command name would run into the text after it, it
+  adds a `{}`, e.g., `\LaTeX\blue{s}` → `\LaTeX{}s`.
 * No new paragraphs: a line that is empty after removing a note is removed.
   The words around a note keep their space, or stay together with a `%`,
   e.g., `word\comment{a⏎b}s` → `word%⏎s`.  Lines are never joined.
