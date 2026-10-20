@@ -251,6 +251,8 @@ body.settings-shown .sidebar { display: flex; }
 }
 .files-area .sec { border-bottom: 0; }
 .files-area .sec h3 { color: var(--accent); }
+.files-area .sec-head .btn { margin-right: -8px; color: var(--muted); }
+.files-area .sec-head .btn:hover { color: var(--text); }
 .file-row { display: flex; align-items: center; gap: 6px; }
 .file-row.wide .btn { flex: 1; justify-content: center; }
 /* The open files, and the archives with their .tex files. Clicking a file

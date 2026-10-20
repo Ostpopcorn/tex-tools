@@ -523,7 +523,18 @@ function renderFiles() {
   for (const el of $$(".file-members", list)) el.scrollTop = scrolled.get(el.dataset.archive) || 0;
   if (focused) $(".file-open[aria-current=true]", list)?.focus({ preventScroll: true });
   $("#files-sum").textContent = state.sources.length > 1 ? plural(state.sources.length, ".tex file") : "";
+  $("#close-all").hidden = !state.sources.length;
 }
+
+// Close all files, also the archives that are being opened
+$("#close-all").addEventListener("click", () => {
+  // The files in the list: an archive is one file
+  const count = state.sources.filter((source) => source.archive == null).length + state.archives.length;
+  unpacking.clear();
+  closeSources(() => false);
+  $(".files-area [data-pick]").focus();
+  toast(`Closed ${plural(count, "file")}`);
+});
 
 // On narrow screens, the panel over the panes closes to show the file
 function showFile(idx) {

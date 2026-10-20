@@ -11,8 +11,9 @@ files never leave your computer.
 ![Screenshot of the web app](web/screenshot.png)
 
 * The files and the settings are in a panel on the left: the open files at
-  the top, and the settings below them, each with an example.  Hide the
-  panel to a bar on the left to make room for the panes.
+  the top, and the settings below them, each with an example.  _Close all_
+  closes all files.  Hide the panel to a bar on the left to make room for
+  the panes.
 * Removed lines are marked red, and the removed end of a changed line is
   struck through.  In the result, a red triangle on the edge marks where
   whole lines were removed, like git in VS Code.  Text that is kept on
