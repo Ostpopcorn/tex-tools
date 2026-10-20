@@ -119,8 +119,9 @@ Highlights and notes are read like LaTeX reads them, and it plays it safe:
   The words around a note keep their space, or stay together with a `%`,
   e.g., `word\comment{a⏎b}s` → `word%⏎s`.  Lines are never joined.
 * What is not clear is kept as it is, with a warning that says why, e.g., a
-  highlight without a closing `}`, with an optional argument `[…]`, or with
-  `\verb` in it.
+  highlight without a closing `}`, with an optional argument `[…]`, with
+  `\verb` in it, or with another `{…}` right after it, like
+  `\textcolor{blue}{…}`, which may have more than one argument.
 
 In Python, `clean` removes highlights and notes, and then comments:
 ```python

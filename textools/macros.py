@@ -427,6 +427,12 @@ def remove_macros(text, options=MacroOptions()):
                 if old >= len(body) or body[old] != "{":
                     raise _Unclear("it is not followed by {new}{old}")
                 old_end = _group_end(body, old)
+            # e.g., \textcolor{blue}{x}, whose first argument is not its
+            # text
+            after = _skip_spaces(body, old_end if action == "replace" else end)
+            if after < len(body) and body[after] == "{":
+                raise _Unclear("it is followed by another {...}, so it may "
+                               "have more than one argument")
         except _Unclear as err:
             keep_as_is(start, pos, "\\" + name, str(err))
             continue

@@ -64,6 +64,10 @@ def test_definitions_comments_and_verbatim_stay(text):
     ("\\blue{\\begin{verbatim}\n}\n\\end{verbatim}}",
      "it contains a \\begin{verbatim}"),
     ("\\replaced{new} old", "it is not followed by {new}{old}"),
+    ("\\blue{a} {b}", "it is followed by another {...}, so it may have "
+                      "more than one argument"),
+    ("\\comment{a}{b}", "it is followed by another {...}, so it may have "
+                        "more than one argument"),
 ])
 def test_unclear_uses_are_kept_with_why(text, reason):
     result = remove_macros(text, ALL)
@@ -92,6 +96,12 @@ def test_unclear_uses_are_kept_with_why(text, reason):
 ])
 def test_notes_are_removed_with_their_text(text, expected):
     assert _clean(text) == expected
+
+
+def test_macros_with_more_arguments_are_kept():
+    text = "\\textcolor{blue}{x}"
+    result = remove_macros(text, MacroOptions(highlights=("textcolor",)))
+    assert result.text == text and len(result.unsure) == 1
 
 
 def test_notes_never_leave_a_blank_line():
