@@ -135,6 +135,8 @@ class MacroResult:
     messages: List[Tuple[str, str]] = field(default_factory=list)
     #: Whether the text has comment environments
     envs: bool = False
+    #: The first and last line of the removed highlights, whose text is kept
+    highlighted: List[Tuple[int, int]] = field(default_factory=list)
 
 
 class _Unclear(Exception):
@@ -450,6 +452,7 @@ def remove_macros(text, options=MacroOptions()):
             pos = end
             continue
         result.highlights += 1
+        result.highlighted.append((line, lines.line_of(end - 1)))
         content = (arg + 1, end - 1)
         follow = old_end if action == "replace" else end
         if _needs_braces(body, start, content, follow):

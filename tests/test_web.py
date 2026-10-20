@@ -55,6 +55,7 @@ def test_run_with_highlights_and_notes():
     assert result["text"] == ("\\newcommand{\\hl}[1]{\\textcolor{orange}{#1}}\n"
                               "A new word.\n\\red{open\n")
     assert result["highlights"] == 1
+    assert result["highlighted"] == [[1, 1]]
     # the comment, the note, and the comment environment
     assert result["comments"] == 3
     assert result["lines"][1] == [1, [[2, 8], [11, 12], [18, 22]], "comment"]

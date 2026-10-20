@@ -36,6 +36,8 @@ class Cleaned:
     unsure: List[Unsure] = field(default_factory=list)
     #: Warnings and notes as (level, text)
     messages: List[Tuple[str, str]] = field(default_factory=list)
+    #: The first and last line of the removed highlights, whose text is kept
+    highlighted: List[Tuple[int, int]] = field(default_factory=list)
 
 
 def _spans(columns):
@@ -79,4 +81,5 @@ def clean(text, options=Options(), macros=MacroOptions()):
                  _kept.name) for _kept in second.kept]
     return Cleaned(second.text, lines, second.count,
                    second.comments + first.notes, first.highlights, kept,
-                   first.unsure, first.messages + second.messages)
+                   first.unsure, first.messages + second.messages,
+                   first.highlighted)

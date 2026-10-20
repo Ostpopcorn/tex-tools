@@ -1058,6 +1058,8 @@ function foldsOf(source, lines, file) {
   });
   // The highlights and notes that are kept, since they are not clear
   for (const { lines: [first] } of file.unsure) show(first);
+  // The text of a highlight, also between the lines of \blue{ and its }
+  for (const [first, last] of file.highlighted || []) shown.fill(1, first, last + 1);
   for (const { lines: [first, last] } of file.kept) {
     show(first);
     for (let i = first + 1; i <= last; i++) if (lines[i].includes("%")) show(i);

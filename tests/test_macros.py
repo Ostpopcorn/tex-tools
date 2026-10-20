@@ -153,6 +153,13 @@ def test_comment_envs_of_ones_own():
                                 "since your files define their own.")]
 
 
+def test_highlighted_lines():
+    text = "a\n\\blue{x\ny\nz} \\red{w}\n\\replaced{n\new}{old\nlines}\n"
+    result = remove_macros(text, ALL)
+    assert result.highlighted == [(1, 3), (3, 3), (4, 5)]
+    assert clean(text, Options(), ALL).highlighted == result.highlighted
+
+
 def test_lines_and_cuts():
     result = remove_macros("a \\blue{b}\n\\LaTeX\\comment{x}s\r\n", ALL)
     assert result.text == "a b\r\n\\LaTeX{}s\r\n"

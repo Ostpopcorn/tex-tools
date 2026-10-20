@@ -88,6 +88,8 @@ def run(request_json):
             "unsure": [{"lines": list(_unsure.lines), "name": _unsure.name,
                         "reason": _unsure.reason}
                        for _unsure in result.unsure],
+            # the first and last line of each removed highlight
+            "highlighted": [list(_lines) for _lines in result.highlighted],
             "messages": result.messages,
         })
     suggestions = []
